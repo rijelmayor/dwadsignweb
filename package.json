@@ -1,8 +1,8 @@
 {
   "name": "dwadsign-website",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "DWA Sign — Advertising & Signages. Landing page + quotation system.",
+  "description": "Delight Works AdSign — landing + 3D quote builder",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,17 +10,21 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.0",
     "next": "^15.3.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "^0.175.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.175.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0"
   }

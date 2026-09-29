@@ -6,20 +6,24 @@ import Work from "@/components/Work";
 import Process from "@/components/Process";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
+import { fetchLandingSettings } from "@/lib/settings";
 
-export default function Home() {
+export const revalidate = 30;
+
+export default async function Home() {
+  const s = await fetchLandingSettings();
   return (
     <>
-      <Navbar />
+      <Navbar quoteUrl={s.links.quoteUrl} ctaLabel={s.hero.ctaLabel} />
       <main>
-        <Hero />
-        <Marquee />
-        <Services />
-        <Work />
+        <Hero hero={s.hero} links={s.links} />
+        <Marquee items={s.marquee} />
+        <Services services={s.services} />
+        <Work projects={s.projects} />
         <Process />
-        <Contact />
+        <Contact contact={s.contact} links={s.links} />
       </main>
-      <Footer />
+      <Footer links={s.links} />
     </>
   );
 }

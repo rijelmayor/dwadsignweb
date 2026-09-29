@@ -1,11 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export function createClient() {
+let cached: SupabaseClient | null | undefined;
+
+export function createClient(): SupabaseClient | null {
+  if (cached !== undefined) return cached;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  // Not configured yet — the app gracefully falls back to localStorage mode.
-  if (!url || !key || url.includes("YOUR-PROJECT")) return null;
-
-  return createBrowserClient(url, key);
+  cached = !url || !key || url.includes("YOUR-PROJECT") ? null : createBrowserClient(url, key);
+  return cached;
 }
