@@ -142,7 +142,7 @@ function mergeNumberMap(raw: unknown, fallback: Record<string, number>) {
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {
   const r = (raw ?? {}) as Partial<QuoteSettings> & { panaflexPricing?: Partial<PanaflexPricing> };
   const d = DEFAULT_QUOTE_SETTINGS;
-  const p = r.panaflexPricing ?? {};
+  const p: Partial<PanaflexPricing> = r.panaflexPricing ?? {};
   return {
     markupPct: num(r.markupPct, d.markupPct),
     vatPct: num(r.vatPct, d.vatPct),
