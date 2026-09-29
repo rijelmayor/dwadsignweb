@@ -66,9 +66,11 @@ export default function QuoteBuilder() {
   const [discount, setDiscount] = useState(0);
   const [preparedBy, setPreparedBy] = useState("");
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [msg, setMsg] = useState("");
   const [supabaseOk, setSupabaseOk] = useState<boolean | null>(null);
   const sceneRef = useRef<SignSceneHandle>(null);
+  const quoteSheetRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -145,7 +147,63 @@ export default function QuoteBuilder() {
     setMsg(error ? `Save failed: ${error.message}` : "Saved to Supabase ✓"); setSaving(false);
   }, [quoteNo, client, lines, subtotal, discount, vat, grand, preparedBy, qs.preparedByTitle]);
 
-  const handlePrint = () => window.print();
+  const downloadImage = useCallback(async (format: "png" | "jpeg") => {
+    if (!quoteSheetRef.current) return;
+    if (lines.length === 0) {
+      setMsg("Add at least one sign before downloading.");
+      setTimeout(() => setMsg(""), 2500);
+      return;
+    }
+    setExporting(true);
+    setMsg("");
+    try {
+      // Hide elements that should not appear on the client image
+      const hideNodes = quoteSheetRef.current.querySelectorAll<HTMLElement>(".no-export");
+      hideNodes.forEach((n) => { n.dataset._prevDisplay = n.style.display; n.style.display = "none"; });
+
+      const { toPng, toJpeg } = await import("html-to-image");
+      const options = {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        quality: format === "jpeg" ? 0.92 : 1,
+      };
+      const dataUrl = format === "png"
+        ? await toPng(quoteSheetRef.current, options)
+        : await toJpeg(quoteSheetRef.current, options);
+
+      hideNodes.forEach((n) => { n.style.display = n.dataset._prevDisplay || ""; delete n.dataset._prevDisplay; });
+
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `${quoteNo}.${format === "png" ? "png" : "jpg"}`;
+      a.click();
+      setMsg(`Downloaded ${format.toUpperCase()} · ready to send to client`);
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err) {
+      console.error(err);
+      setMsg("Image export failed. Try again or check the browser console.");
+      setTimeout(() => setMsg(""), 4000);
+    } finally {
+      setExporting(false);
+    }
+  }, [lines.length, quoteNo]);
+
+  const downloadMockupOnly = useCallback(() => {
+    const first = lines.find((l) => l.mockupPng);
+    if (!first?.mockupPng) {
+      setMsg("No 3D mockup yet — add a sign first.");
+      setTimeout(() => setMsg(""), 2500);
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = first.mockupPng;
+    a.download = `${quoteNo}-mockup.png`;
+    a.click();
+    setMsg("3D mockup PNG downloaded");
+    setTimeout(() => setMsg(""), 2500);
+  }, [lines, quoteNo]);
+
   const inputCls = "w-full rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-white placeholder:text-fog/50 focus:border-teal outline-none";
   const labelCls = "block text-[11px] font-bold tracking-wider uppercase text-fog mb-1.5";
 
@@ -153,7 +211,12 @@ export default function QuoteBuilder() {
     <header className="no-print sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
       <div className="mx-auto max-w-[1600px] px-4 h-14 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3"><Link href="/"><Image src="/logo-mark.png" alt="DW" width={120} height={58} className="h-8 w-auto" /></Link><span className="font-display font-bold text-sm hidden sm:inline">Quote Builder <span className="text-fog font-normal">· {site.name}</span></span>{supabaseOk === false && <span className="text-[10px] rounded bg-amber-500/20 text-amber-300 px-2 py-0.5 border border-amber-500/40">Supabase offline</span>}</div>
-        <div className="flex gap-2"><Link href="/buildersettings" className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">Builder Settings</Link><button onClick={handlePrint} className="rounded-full bg-gold text-ink px-4 py-2 text-xs font-bold hover:bg-gold-dim">Print / Save PDF</button></div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <Link href="/buildersettings" className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">Builder Settings</Link>
+          <button onClick={downloadMockupOnly} className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white" title="Download 3D mockup only">3D Mockup PNG</button>
+          <button disabled={exporting} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gold/50 px-4 py-2 text-xs font-bold text-gold hover:bg-gold/10 disabled:opacity-50">Download JPG</button>
+          <button disabled={exporting} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-4 py-2 text-xs font-bold hover:bg-gold-dim disabled:opacity-50">{exporting ? "Exporting…" : "Download PNG"}</button>
+        </div>
       </div>
     </header>
 
@@ -192,23 +255,100 @@ export default function QuoteBuilder() {
 
         <div className="rounded-2xl border border-line bg-panel overflow-hidden">
           <div className="px-4 py-2 border-b border-line text-xs text-fog flex justify-between"><span>3D render · clean face, no visible frame</span><span>{height} × {width} ft · {thicknessIn}" thick</span></div>
-          <div className="h-[440px]">{st && traits && <SignScene ref={sceneRef} widthFt={width} heightFt={height} preview="panaflex" traits={traits} text={client.company?.slice(0, 8) || "DW"} logoUrl={activeLogo} showDimensions faceLabel={faceLabel} printingLabel={printingLabel} />}</div>
+          <div className="h-[440px]">{st && traits && <SignScene ref={sceneRef} widthFt={width} heightFt={height} preview="panaflex" traits={traits} text="Your Logo" logoUrl={activeLogo} showDimensions faceLabel={faceLabel} printingLabel={printingLabel} />}</div>
         </div>
         {msg && <div className="rounded-xl border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">{msg}</div>}
       </section>
 
-      <section className="print-sheet rounded-2xl border border-line bg-white text-ink overflow-hidden">
-        <div className="bg-[#011424] text-white px-6 py-5 flex items-start justify-between gap-4"><div><Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-10 w-auto mb-2" /><p className="font-display font-bold text-lg">Delight Works</p><p className="text-xs text-fog tracking-widest uppercase">{site.descriptor}</p></div><div className="text-right text-sm"><p className="font-display font-bold text-gold text-lg">{quoteNo}</p><p className="text-fog">{today()}</p></div></div>
+      <section ref={quoteSheetRef} className="quote-sheet rounded-2xl border border-line bg-white text-ink overflow-hidden">
+        <div className="bg-[#011424] text-white px-6 py-5 flex items-start justify-between gap-4">
+          <div>
+            <Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-10 w-auto mb-2" />
+            <p className="font-display font-bold text-lg">Delight Works</p>
+            <p className="text-xs text-fog tracking-widest uppercase">{site.descriptor}</p>
+          </div>
+          <div className="text-right text-sm">
+            <p className="font-display font-bold text-gold text-lg">{quoteNo}</p>
+            <p className="text-fog">{today()}</p>
+          </div>
+        </div>
 
-        <div className="px-6 py-4 border-b border-gray-200 grid grid-cols-2 gap-3 no-print">{(["name", "company", "email", "phone", "project"] as const).map((k) => <div key={k} className={k === "project" ? "col-span-2" : ""}><label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-0.5">{k === "name" ? "Client name" : k}</label><input value={client[k]} onChange={(e) => setClient((c) => ({ ...c, [k]: e.target.value }))} className="w-full border border-gray-200 rounded px-2 py-1 text-sm" placeholder={k} /></div>)}</div>
-        <div className="hidden print:block px-6 py-4 border-b border-gray-200 text-sm"><p><strong>{client.name || "—"}</strong>{client.company ? ` · ${client.company}` : ""}</p><p className="text-gray-600">{[client.email, client.phone].filter(Boolean).join(" · ")}</p>{client.project && <p className="text-gray-600">Project: {client.project}</p>}</div>
+        <div className="px-6 py-5 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display font-bold text-lg">Sign Specification</h2>
+            <span className="text-xs text-gray-500">3D mockup + dimensions</span>
+          </div>
+          {lines.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8 no-export">Add a Panaflex sign from the builder. The 3D render (with dimension arrows) will appear here for image download.</p>
+          ) : (
+            lines.map((l) => (
+              <div key={l.id} className="mb-5 last:mb-0 border border-gray-200 rounded-xl overflow-hidden">
+                {l.mockupPng && (
+                  <img src={l.mockupPng} alt="3D sign mockup with dimensions" className="w-full h-56 object-contain bg-[#eef2f5]" />
+                )}
+                <div className="p-4">
+                  <div className="flex justify-between gap-4">
+                    <div>
+                      <p className="font-bold">{l.signName}</p>
+                      <p className="text-xs text-gray-500">{l.face} · {l.lighting} · {l.printing}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold">₱{fmt(l.unitCost * l.qty)}</p>
+                      <p className="text-xs text-gray-500">Qty {l.qty}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 text-xs">
+                    <div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Height</span><strong>{l.height} ft</strong></div>
+                    <div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Width</span><strong>{l.width} ft</strong></div>
+                    <div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Thickness</span><strong>{l.thicknessIn}&quot;</strong></div>
+                    <div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Area</span><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
+                  </div>
+                  {l.note && <p className="text-xs text-gray-600 mt-3">Note: {l.note}</p>}
+                  <button onClick={() => removeLine(l.id)} className="text-red-500 text-xs hover:underline no-export mt-3">Remove</button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-        {/* PDF/print specification is intentionally directly below client details. */}
-        <div className="px-6 py-5 border-b border-gray-200"><div className="flex items-center justify-between mb-3"><h2 className="font-display font-bold text-lg">Sign Specification</h2><span className="text-xs text-gray-500">All dimensions shown</span></div>{lines.length === 0 ? <p className="text-sm text-gray-400 text-center py-8 no-print">Add a sign from the builder.</p> : lines.map((l) => <div key={l.id} className="mb-5 last:mb-0 border border-gray-200 rounded-xl overflow-hidden break-inside-avoid">{l.mockupPng && <img src={l.mockupPng} alt="3D sign mockup" className="w-full h-48 object-contain bg-[#eef2f5]" />}<div className="p-4"><div className="flex justify-between gap-4"><div><p className="font-bold">{l.signName}</p><p className="text-xs text-gray-500">{l.face} · {l.lighting} · {l.printing}</p></div><div className="text-right"><p className="font-bold">₱{fmt(l.unitCost * l.qty)}</p><p className="text-xs text-gray-500">Qty {l.qty}</p></div></div><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 text-xs"><div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Height</span><strong>{l.height} ft</strong></div><div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Width</span><strong>{l.width} ft</strong></div><div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Thickness</span><strong>{l.thicknessIn}"</strong></div><div className="bg-gray-50 rounded p-2"><span className="block text-gray-500">Area</span><strong>{l.areaSqft.toFixed(2)} sqft</strong></div></div>{l.note && <p className="text-xs text-gray-600 mt-3">Note: {l.note}</p>}<button onClick={() => removeLine(l.id)} className="text-red-500 text-xs hover:underline no-print mt-3">Remove</button></div></div>)}</div>
+        <div className="px-6 py-4 border-b border-gray-200 space-y-1 text-sm">
+          <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>₱{fmt(subtotal)}</span></div>
+          <div className="flex justify-between items-center no-export">
+            <span className="text-gray-500">Discount</span>
+            <input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-28 border border-gray-200 rounded px-2 py-0.5 text-right text-sm" />
+          </div>
+          {discount > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Discount</span>
+              <span>−₱{fmt(discount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div>
+          <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
+            <span>Grand Total</span>
+            <span>₱{fmt(grand)}</span>
+          </div>
+        </div>
 
-        <div className="px-6 py-4 border-b border-gray-200 space-y-1 text-sm"><div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>₱{fmt(subtotal)}</span></div><div className="flex justify-between items-center no-print"><span className="text-gray-500">Discount</span><input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-28 border border-gray-200 rounded px-2 py-0.5 text-right text-sm" /></div>{discount > 0 && <div className="flex justify-between print:flex hidden"><span className="text-gray-500">Discount</span><span>−₱{fmt(discount)}</span></div>}<div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div><div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200"><span>Grand Total</span><span>₱{fmt(grand)}</span></div></div>
-        <div className="px-6 py-4 bg-gray-50 text-xs text-gray-600 space-y-1">{qs.terms.map((t, i) => <p key={i}>• {t}</p>)}<div className="pt-4 flex justify-between items-end"><div className="no-print"><label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-0.5">Prepared by</label><input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="border border-gray-200 rounded px-2 py-1 text-sm w-40" placeholder="Your name" /></div><div className="text-right"><p className="font-semibold text-ink">{preparedBy || "—"}</p><p>{qs.preparedByTitle}</p></div></div></div>
-        <div className="no-print px-6 py-4 flex justify-end"><button disabled={saving} onClick={saveQuote} className="rounded-full bg-teal text-ink px-6 py-2.5 font-bold disabled:opacity-50">{saving ? "Saving…" : "Save Quote to Supabase"}</button></div>
+        <div className="px-6 py-4 bg-gray-50 text-xs text-gray-600 space-y-1">
+          {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
+          <div className="pt-4 flex justify-between items-end">
+            <div className="no-export">
+              <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-0.5">Prepared by</label>
+              <input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="border border-gray-200 rounded px-2 py-1 text-sm w-40" placeholder="Your name" />
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-ink">{preparedBy || "—"}</p>
+              <p>{qs.preparedByTitle}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="no-export px-6 py-4 flex flex-wrap justify-end gap-2">
+          <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gray-300 px-5 py-2.5 text-sm font-bold text-ink hover:bg-gray-50 disabled:opacity-50">Download JPG</button>
+          <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-5 py-2.5 text-sm font-bold hover:bg-gold-dim disabled:opacity-50">{exporting ? "Exporting…" : "Download PNG"}</button>
+          <button disabled={saving} onClick={saveQuote} className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50">{saving ? "Saving…" : "Save to Supabase"}</button>
+        </div>
       </section>
     </main>
   </div>;

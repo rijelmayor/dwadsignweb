@@ -1,6 +1,6 @@
 # Delight Works AdSign — dwadsign.com
 
-Landing page + **3D sign configurator & quotation system**.
+Landing page + **3D Panaflex sign configurator & quotation system**.
 
 ## Brand
 
@@ -13,8 +13,8 @@ Landing page + **3D sign configurator & quotation system**.
 | Path | Purpose |
 |------|---------|
 | `/` | Public landing (content from DB or defaults) |
-| `/quotebuilder` | Sales tool — configure signs, live 3D, build & print quotes |
-| `/buildersettings` | Admin — landing copy, quote defaults, material catalog |
+| `/quotebuilder` | Panaflex 3D builder — dimensions, face, lighting, printing, live 3D, download PNG/JPG for client |
+| `/buildersettings` | Admin — landing copy, Panaflex pricing rates, material catalog |
 
 ## Setup
 
@@ -22,35 +22,51 @@ Landing page + **3D sign configurator & quotation system**.
 npm install
 cp .env.example .env.local
 # Fill NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY
-# Run supabase/schema.sql in Supabase SQL Editor
+# Run supabase/schema.sql in Supabase SQL Editor (creates tables + seeds pricing)
 npm run dev
 ```
 
-Without Supabase the site uses built-in defaults; quotes save to `localStorage`.
+Without Supabase the site uses built-in defaults (prices = 0 / TBD).
 
-## Filling prices
+## Panaflex Quote Builder (focus)
 
-Edit materials at **/buildersettings → Sign Catalog**.  
-`pricePerUnit: 0` shows as **TBD**.
+Dimension-first workflow — focus is on **3D design + pricing**, not client forms:
+
+1. **Height, Width, Thickness** (ft / in)
+2. **Face**: Panaflex · Tarp · APC · Acrylic · Metal Sheet · Custom
+3. **Lighting**: With Light / Without Light
+4. **Printing**: Sticker · Direct print · UV print
+5. Optional logo / design upload
+6. **3D preview** — clean face with dimension arrows on **all sides** (W / H / T) and visible numbers
+7. Capture 3D PNG into the quote line → **Download PNG or JPG** image to send to the client
+
+### Client image export
+
+| Button | Output |
+|--------|--------|
+| **Download PNG** | Full quote sheet (logo, 3D mockup, specs, totals) as high-res PNG |
+| **Download JPG** | Same sheet as JPEG (smaller file, good for chat/email) |
+| **3D Mockup PNG** | Only the 3D render with dimension arrows |
+
+No PDF / print flow — image is the deliverable for the client.
+
+### Supabase tables
+
+Run `supabase/schema.sql` once. It creates:
+
+| Table | Purpose |
+|-------|---------|
+| `site_settings` | key/value JSONB. Key `quote` holds `panaflexPricing` (sqft rates) + markup/VAT. Key `catalog` holds sign types. |
+| `quotes` | Saved quotations (`quote_no`, `client`, `lines` with `mockupPng`, `totals`, `status`) |
+
+Pricing formula:
+
+```
+unit = max(minimumCharge, (construction + face + lighting + printing) × sqft × (1 + markup%))
+```
+
+Starter rates are seeded in the schema. Edit anytime at **/buildersettings → Quote**.
 
 ## Stack
 
-Next.js 15 · Tailwind 4 · React Three Fiber · Supabase
-
-## Panaflex Quote Builder update
-
-The builder now treats Panaflex as a dimension-first workflow:
-
-1. Height, Width, Thickness
-2. Face: Panaflex, Tarp, APC, Acrylic, Metal Sheet, Custom Build Face
-3. Lighting: With Light / Without Light
-4. Printing: Sticker print / Direct print to materials / UV print
-5. Client logo
-6. Clean white 3D face with dimension arrows
-7. Quote specification directly below client details for print/PDF output
-
-### Supabase pricing
-
-`site_settings` continues to hold the builder configuration. The `quote` JSON now contains `panaflexPricing` with square-foot rates for internal construction, each face build, lighting, printing, and a minimum charge. Builder Settings saves these values to Supabase; Quote Builder reads them when calculating a quote.
-
-No new pricing table is required for this first Panaflex implementation.
+Next.js 15 · Tailwind 4 · React Three Fiber · Supabase · html-to-image

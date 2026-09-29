@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Environment, ContactShadows, RoundedBox, Line, Html, Text, useTexture } from "@react-three/drei";
+import { OrbitControls, Environment, ContactShadows, RoundedBox, Line, Text, useTexture } from "@react-three/drei";
 import { Suspense, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
 import * as THREE from "three";
 import type { Traits } from "@/lib/traits";
@@ -35,13 +35,23 @@ function DimLine({ start, end, label, offset = [0, 0, 0] as [number, number, num
   const dx = e[0] - s[0], dy = e[1] - s[1], dz = e[2] - s[2];
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
   const ax = (dx / len) * 0.12, ay = (dy / len) * 0.12, az = (dz / len) * 0.12;
+  // Use Text (not Html) so dimension numbers appear in canvas PNG capture for PDF
   return <group>
-    <Line points={[s, e]} color={color} lineWidth={2} />
-    <Line points={[[s[0] + ax + ay * 0.4, s[1] + ay - ax * 0.4, s[2] + az], s, [s[0] + ax - ay * 0.4, s[1] + ay + ax * 0.4, s[2] + az]]} color={color} lineWidth={2} />
-    <Line points={[[e[0] - ax + ay * 0.4, e[1] - ay - ax * 0.4, e[2] - az], e, [e[0] - ax - ay * 0.4, e[1] - ay + ax * 0.4, e[2] - az]]} color={color} lineWidth={2} />
-    <Html position={mid} center style={{ pointerEvents: "none" }}>
-      <div style={{ background: "rgba(1,20,36,0.92)", color, fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 5, border: `1px solid ${color}`, whiteSpace: "nowrap", fontFamily: "system-ui,sans-serif" }}>{label}</div>
-    </Html>
+    <Line points={[s, e]} color={color} lineWidth={2.5} />
+    <Line points={[[s[0] + ax + ay * 0.4, s[1] + ay - ax * 0.4, s[2] + az], s, [s[0] + ax - ay * 0.4, s[1] + ay + ax * 0.4, s[2] + az]]} color={color} lineWidth={2.5} />
+    <Line points={[[e[0] - ax + ay * 0.4, e[1] - ay - ax * 0.4, e[2] - az], e, [e[0] - ax - ay * 0.4, e[1] - ay + ax * 0.4, e[2] - az]]} color={color} lineWidth={2.5} />
+    <Text
+      position={[mid[0], mid[1], mid[2] + 0.02]}
+      fontSize={0.18}
+      color={color}
+      anchorX="center"
+      anchorY="middle"
+      outlineWidth={0.012}
+      outlineColor="#011424"
+      fontWeight={700}
+    >
+      {label}
+    </Text>
   </group>;
 }
 
@@ -98,17 +108,38 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
     {glow && <pointLight position={[0, 0, depth + 0.5]} intensity={2.0} color="#fff3bd" distance={Math.max(8, w + h)} />}
 
     {showDimensions && <group>
-      <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -0.34, 0.06]} label={`W ${fmtFt(w)}`} color={dimColor} />
-      <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-0.38, 0, 0.06]} label={`H ${fmtFt(h)}`} color={dimColor} />
-      <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0.28, -0.14, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#1ecac9" />
+      {/* Width — bottom edge */}
+      <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -0.42, 0.08]} label={`W ${fmtFt(w)}`} color={dimColor} />
+      {/* Height — left edge */}
+      <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-0.48, 0, 0.08]} label={`H ${fmtFt(h)}`} color={dimColor} />
+      {/* Height — right edge (mirror) */}
+      <DimLine start={[w / 2, -h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[0.48, 0, 0.08]} label={`H ${fmtFt(h)}`} color={dimColor} />
+      {/* Width — top edge (mirror) */}
+      <DimLine start={[-w / 2, h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[0, 0.42, 0.08]} label={`W ${fmtFt(w)}`} color={dimColor} />
+      {/* Thickness — right side depth */}
+      <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0.32, -0.18, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#1ecac9" />
     </group>}
   </group>;
 }
 
-function OtherSignMesh({ widthFt, heightFt, preview, traits, text = "DW", logoUrl }: SignSceneProps) {
+function OtherSignMesh(props: SignSceneProps) {
+  const { widthFt, heightFt, preview, traits, text = "DW", logoUrl, showDimensions = true, faceLabel } = props;
+  if (preview === "panaflex") {
+    return (
+      <PanaflexMesh
+        widthFt={widthFt}
+        heightFt={heightFt}
+        preview={preview}
+        traits={traits}
+        logoUrl={logoUrl}
+        showDimensions={showDimensions}
+        faceLabel={faceLabel}
+        printingLabel={props.printingLabel}
+      />
+    );
+  }
   const w = Math.max(0.5, widthFt), h = Math.max(0.3, heightFt), depth = Math.max(0.06, traits.frameThickness || 0.12);
   const frameColor = traits.metal === "aluminum" ? "#c0c8d0" : traits.metal === "powder" ? "#2a3a4a" : "#3a3a3a";
-  if (preview === "panaflex") return <PanaflexMesh widthFt={widthFt} heightFt={heightFt} preview={preview} traits={traits} logoUrl={logoUrl} showDimensions={false} />;
   const chars = (text || "DW").slice(0, 8).split("");
   return <group>
     <mesh position={[0, 0, -depth - 0.08]}><planeGeometry args={[w * 3.5, h * 3.5]} /><meshStandardMaterial color="#0a1a28" /></mesh>
