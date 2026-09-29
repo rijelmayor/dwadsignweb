@@ -307,43 +307,64 @@ export default function BuilderSettings() {
         {tab === "quote" && (
           <div className="space-y-6">
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <h2 className="font-display text-xl font-bold">Quote defaults</h2>
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div>
-                  <label className={label}>Markup %</label>
-                  <input type="number" className={input} value={quote.markupPct}
-                    onChange={(e) => setQuote({ ...quote, markupPct: +e.target.value || 0 })} />
-                </div>
-                <div>
-                  <label className={label}>VAT %</label>
-                  <input type="number" className={input} value={quote.vatPct}
-                    onChange={(e) => setQuote({ ...quote, vatPct: +e.target.value || 0 })} />
-                </div>
-                <div>
-                  <label className={label}>Quote # prefix</label>
-                  <input className={input} value={quote.quotePrefix}
-                    onChange={(e) => setQuote({ ...quote, quotePrefix: e.target.value })} />
-                </div>
-                <div>
-                  <label className={label}>Prepared-by title</label>
-                  <input className={input} value={quote.preparedByTitle}
-                    onChange={(e) => setQuote({ ...quote, preparedByTitle: e.target.value })} />
-                </div>
-              </div>
               <div>
-                <label className={label}>Terms (one per line)</label>
-                <textarea className={`${input} min-h-[120px]`} value={quote.terms.join("\n")}
-                  onChange={(e) =>
-                    setQuote({
-                      ...quote,
-                      terms: e.target.value.split("\n").map((t) => t.trim()).filter(Boolean),
-                    })
-                  } />
+                <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Global quotation</p>
+                <h2 className="font-display text-xl font-bold">Quote defaults</h2>
               </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div><label className={label}>Markup %</label><input type="number" className={input} value={quote.markupPct} onChange={(e) => setQuote({ ...quote, markupPct: +e.target.value || 0 })} /></div>
+                <div><label className={label}>VAT %</label><input type="number" className={input} value={quote.vatPct} onChange={(e) => setQuote({ ...quote, vatPct: +e.target.value || 0 })} /></div>
+                <div><label className={label}>Quote # prefix</label><input className={input} value={quote.quotePrefix} onChange={(e) => setQuote({ ...quote, quotePrefix: e.target.value })} /></div>
+                <div><label className={label}>Prepared-by title</label><input className={input} value={quote.preparedByTitle} onChange={(e) => setQuote({ ...quote, preparedByTitle: e.target.value })} /></div>
+              </div>
+              <div><label className={label}>Terms (one per line)</label><textarea className={`${input} min-h-[120px]`} value={quote.terms.join("\n")} onChange={(e) => setQuote({ ...quote, terms: e.target.value.split("\n").map((t) => t.trim()).filter(Boolean) })} /></div>
             </section>
-            <button disabled={saving} onClick={() => save("quote", quote)}
-              className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
-              {saving ? "Saving…" : "Save Quote Settings"}
+
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Panaflex pricing engine</p>
+                <h2 className="font-display text-xl font-bold">Square-foot pricing</h2>
+                <p className="text-sm text-fog mt-1">These rates are stored in Supabase under <strong>site_settings → quote → panaflexPricing</strong>. The Quote Builder calculates area × rate, then applies the global markup.</p>
+              </div>
+
+              <div>
+                <label className={label}>Internal construction / frame rate · per sqft</label>
+                <input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.constructionPerSqft} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, constructionPerSqft: +e.target.value || 0 } })} />
+                <p className="text-[11px] text-fog mt-1">Not shown as a customer-facing frame option. It remains part of the internal cost calculation.</p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3">Face build · ₱ / sqft</h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {([['panaflex','Panaflex'],['tarp','Tarp'],['apc','APC'],['acrylic','Acrylic'],['metal','Metal Sheet'],['custom','Custom Build Face']] as const).map(([id, name]) => (
+                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.face[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, face: { ...quote.panaflexPricing.face, [id]: +e.target.value || 0 } } })} /></div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3">Lighting · ₱ / sqft</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {([['without','Without Light'],['with','With Light']] as const).map(([id, name]) => (
+                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.lighting[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, lighting: { ...quote.panaflexPricing.lighting, [id]: +e.target.value || 0 } } })} /></div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3">Printing · ₱ / sqft</h3>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  {([['sticker','Sticker print'],['direct','Direct print to materials'],['uv','UV print']] as const).map(([id, name]) => (
+                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.printing[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, printing: { ...quote.panaflexPricing.printing, [id]: +e.target.value || 0 } } })} /></div>
+                  ))}
+                </div>
+              </div>
+
+              <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.minimumCharge} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, minimumCharge: +e.target.value || 0 } })} /></div>
+            </section>
+
+            <button disabled={saving} onClick={() => save("quote", quote)} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
+              {saving ? "Saving…" : "Save Quote & Panaflex Pricing to Supabase"}
             </button>
           </div>
         )}

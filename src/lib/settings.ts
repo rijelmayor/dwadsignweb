@@ -77,13 +77,45 @@ export async function fetchLandingSettings(): Promise<LandingSettings> {
   }
 }
 
+export interface PanaflexPricing {
+  /** Hidden construction/base rate. Still charged per square foot, but not exposed as a customer-facing frame option. */
+  constructionPerSqft: number;
+  face: Record<string, number>;
+  lighting: Record<string, number>;
+  printing: Record<string, number>;
+  minimumCharge: number;
+}
+
 export interface QuoteSettings {
   markupPct: number;
   vatPct: number;
   quotePrefix: string;
   terms: string[];
   preparedByTitle: string;
+  panaflexPricing: PanaflexPricing;
 }
+
+export const DEFAULT_PANAFLEX_PRICING: PanaflexPricing = {
+  constructionPerSqft: 0,
+  face: {
+    panaflex: 0,
+    tarp: 0,
+    apc: 0,
+    acrylic: 0,
+    metal: 0,
+    custom: 0,
+  },
+  lighting: {
+    without: 0,
+    with: 0,
+  },
+  printing: {
+    sticker: 0,
+    direct: 0,
+    uv: 0,
+  },
+  minimumCharge: 0,
+};
 
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   markupPct: 40,
@@ -95,16 +127,34 @@ export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
     "Prices are subject to site survey confirmation.",
   ],
   preparedByTitle: "Sales Specialist",
+  panaflexPricing: DEFAULT_PANAFLEX_PRICING,
 };
 
+function num(v: unknown, fallback: number) {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+function mergeNumberMap(raw: unknown, fallback: Record<string, number>) {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(fallback).map(([key, value]) => [key, num(r[key], value)]));
+}
+
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {
-  const r = (raw ?? {}) as Partial<QuoteSettings>;
+  const r = (raw ?? {}) as Partial<QuoteSettings> & { panaflexPricing?: Partial<PanaflexPricing> };
   const d = DEFAULT_QUOTE_SETTINGS;
+  const p = r.panaflexPricing ?? {};
   return {
-    markupPct: typeof r.markupPct === "number" ? r.markupPct : d.markupPct,
-    vatPct: typeof r.vatPct === "number" ? r.vatPct : d.vatPct,
+    markupPct: num(r.markupPct, d.markupPct),
+    vatPct: num(r.vatPct, d.vatPct),
     quotePrefix: r.quotePrefix?.trim() || d.quotePrefix,
     terms: nonEmptyArray(r.terms, d.terms),
     preparedByTitle: r.preparedByTitle ?? d.preparedByTitle,
+    panaflexPricing: {
+      constructionPerSqft: num(p.constructionPerSqft, d.panaflexPricing.constructionPerSqft),
+      face: mergeNumberMap(p.face, d.panaflexPricing.face),
+      lighting: mergeNumberMap(p.lighting, d.panaflexPricing.lighting),
+      printing: mergeNumberMap(p.printing, d.panaflexPricing.printing),
+      minimumCharge: num(p.minimumCharge, d.panaflexPricing.minimumCharge),
+    },
   };
 }

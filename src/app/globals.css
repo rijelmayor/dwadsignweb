@@ -36,3 +36,8 @@ body { @apply bg-ink text-white font-body antialiased; }
   }
   .print-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+@media print {
+  .print-sheet { page-break-inside: auto; }
+  .print-sheet > * { page-break-inside: auto; }
+  .print-sheet .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+}

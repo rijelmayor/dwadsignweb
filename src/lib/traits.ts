@@ -11,7 +11,7 @@ export interface Traits {
 
 const has = (s: string, re: RegExp) => re.test(s.toLowerCase());
 
-export function deriveTraits(st: SignType, selections: Record<string, string>): Traits {
+export function deriveTraits(st: SignType, selections: Record<string, string>, thicknessIn = 2) : Traits {
   const pick = (role: string) => {
     const comp = st.components.find((c) => roleOf(c) === role);
     const opt = comp?.options.find((o) => o.id === selections[comp.id]) ?? comp?.options[0];
@@ -25,29 +25,23 @@ export function deriveTraits(st: SignType, selections: Record<string, string>): 
   const backing = st.components.find((c) => c.id === "backing");
   const backingOpt = backing?.options.find((o) => o.id === selections[backing.id]) ?? backing?.options[0];
 
-  const frameThickness = has(frame, /1x2|cab|heavy|box/) ? 0.17 : has(frame, /stud|thin/) ? 0.09 : 0.12;
-
+  const frameThickness = Math.max(0.04, thicknessIn / 12);
   const lightMode: Traits["light"] =
-    !light || has(light, /\bnone\b|no light|non-?lit|daytime/) ? "none"
+    !light || has(light, /\bnone\b|no light|without|non-?lit|daytime/) ? "none"
     : has(light, /halo|back-?lit/) && st.preview === "acrylic" ? "halo"
     : has(light, /face-?lit|front/) ? "frontlit"
     : has(light, /rgb/) ? "rgb"
     : has(light, /exposed/) ? "exposed"
     : "internal";
 
-  const mountMode: Traits["mount"] =
-    has(mount, /pole|free/) ? "pole"
-    : has(mount, /roof/) ? "rooftop"
-    : has(mount, /hang|cable/) ? "hanging"
-    : has(mount, /raceway/) ? "raceway"
-    : "wall";
+  const mountMode: Traits["mount"] = has(mount, /pole|free/) ? "pole" : has(mount, /roof/) ? "rooftop" : has(mount, /hang|cable/) ? "hanging" : has(mount, /raceway/) ? "raceway" : "wall";
 
   return {
     frameThickness,
     metal: has(finish, /powder/) ? "powder" : has(frame, /alu/) ? "aluminum" : "primer",
-    light: st.preview === "neon" || st.preview === "lightbox" ? (lightMode === "none" ? "internal" : lightMode) : lightMode,
+    light: lightMode,
     mount: mountMode,
-    material: has(face, /stainless|steel/) ? "stainless" : "acrylic",
+    material: has(face, /stainless|steel|metal/) ? "stainless" : "acrylic",
     backing: has(`${backingOpt?.id ?? ""} ${backingOpt?.name ?? ""}`, /black/) ? "black" : "clear",
   };
 }

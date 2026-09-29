@@ -7,7 +7,9 @@ create table if not exists site_settings (
   updated_at timestamptz not null default now()
 );
 
--- quotes.lines items may include: mockupPng (base64 data URL), logoUrl, depthIn, etc.
+-- quotes.lines items may include: mockupPng (base64 data URL), logoUrl, thicknessIn, areaSqft, face, lighting, printing, and pricing breakdown.
+-- site_settings.key = quote stores the Panaflex pricing engine in value.panaflexPricing.
+-- Panaflex rates are maintained in Builder Settings and calculated as square feet × rate, then global markup/VAT.
 create table if not exists quotes (
   id uuid primary key default gen_random_uuid(),
   quote_no text not null,

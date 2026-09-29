@@ -36,3 +36,21 @@ Edit materials at **/buildersettings → Sign Catalog**.
 ## Stack
 
 Next.js 15 · Tailwind 4 · React Three Fiber · Supabase
+
+## Panaflex Quote Builder update
+
+The builder now treats Panaflex as a dimension-first workflow:
+
+1. Height, Width, Thickness
+2. Face: Panaflex, Tarp, APC, Acrylic, Metal Sheet, Custom Build Face
+3. Lighting: With Light / Without Light
+4. Printing: Sticker print / Direct print to materials / UV print
+5. Client logo
+6. Clean white 3D face with dimension arrows
+7. Quote specification directly below client details for print/PDF output
+
+### Supabase pricing
+
+`site_settings` continues to hold the builder configuration. The `quote` JSON now contains `panaflexPricing` with square-foot rates for internal construction, each face build, lighting, printing, and a minimum charge. Builder Settings saves these values to Supabase; Quote Builder reads them when calculating a quote.
+
+No new pricing table is required for this first Panaflex implementation.
