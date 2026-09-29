@@ -30,7 +30,10 @@ interface LineItem {
   unitCost: number;
   breakdown: { construction: number; face: number; lighting: number; printing: number; markup: number };
   hasTbd: boolean;
+  /** Front view — W × H, logo full-bleed */
   mockupPng?: string | null;
+  /** Side / thickness view */
+  thicknessPng?: string | null;
   logoUrl?: string;
 }
 
@@ -111,7 +114,8 @@ export default function QuoteBuilder() {
 
   const addLine = () => {
     if (!st || !traits || areaSqft <= 0) return;
-    const mockupPng = sceneRef.current?.capturePng() ?? null;
+    const mockupPng = sceneRef.current?.captureFront?.() ?? sceneRef.current?.capturePng() ?? null;
+    const thicknessPng = sceneRef.current?.captureSide?.() ?? null;
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), signTypeId: st.id, signName: st.name, width, height, thicknessIn,
       areaSqft, qty, face: faceLabel, lighting: lightingLabel, printing: printingLabel, mounting,
@@ -123,9 +127,9 @@ export default function QuoteBuilder() {
         printing: live.rates.printing * areaSqft,
         markup: live.unitCost - (live.rates.construction + live.rates.face + live.rates.lighting + live.rates.printing) * areaSqft,
       },
-      hasTbd: live.hasTbd, mockupPng, logoUrl: activeLogo,
+      hasTbd: live.hasTbd, mockupPng, thicknessPng, logoUrl: activeLogo,
     }]);
-    setNote(""); setMsg("Item added to quotation ✓"); setTimeout(() => setMsg(""), 2500);
+    setNote(""); setMsg("Item added · front + thickness views captured ✓"); setTimeout(() => setMsg(""), 2500);
   };
 
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
@@ -283,9 +287,23 @@ export default function QuoteBuilder() {
           ) : (
             lines.map((l) => (
               <div key={l.id} className="mb-5 last:mb-0 border border-gray-200 rounded-xl overflow-hidden">
-                {l.mockupPng && (
-                  <img src={l.mockupPng} alt="3D sign mockup with dimensions" className="w-full h-56 object-contain bg-[#eef2f5]" />
-                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 bg-[#eef2f5]">
+                  {l.mockupPng && (
+                    <div className="border-b sm:border-b-0 sm:border-r border-gray-200">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 pt-2">Front · W × H</p>
+                      <img src={l.mockupPng} alt="Front view with dimensions" className="w-full h-48 object-contain" />
+                    </div>
+                  )}
+                  {l.thicknessPng && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 px-3 pt-2">Side · Thickness</p>
+                      <img src={l.thicknessPng} alt="Thickness / side view" className="w-full h-48 object-contain" />
+                    </div>
+                  )}
+                  {!l.mockupPng && !l.thicknessPng && (
+                    <div className="col-span-2 py-8 text-center text-sm text-gray-400">No 3D capture</div>
+                  )}
+                </div>
                 <div className="p-4">
                   <div className="flex justify-between gap-4">
                     <div>
