@@ -7,6 +7,7 @@ create table if not exists site_settings (
   updated_at timestamptz not null default now()
 );
 
+-- quotes.lines items may include: mockupPng (base64 data URL), logoUrl, depthIn, etc.
 create table if not exists quotes (
   id uuid primary key default gen_random_uuid(),
   quote_no text not null,
