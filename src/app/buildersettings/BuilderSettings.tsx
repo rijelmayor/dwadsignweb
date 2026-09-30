@@ -363,8 +363,21 @@ export default function BuilderSettings() {
               <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.minimumCharge} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, minimumCharge: +e.target.value || 0 } })} /></div>
             </section>
 
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Lightbox Round pricing</p>
+                <h2 className="font-display text-xl font-bold">Round lightbox · max 3 ft</h2>
+                <p className="text-sm text-fog mt-1">Stored under <strong>site_settings → quote → lightboxRoundPricing</strong>. Quote Builder calculates circle area (π × r²) × rate, then applies the global markup.</p>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div><label className={label}>Built-up · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.builtUp} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, builtUp: +e.target.value || 0 } })} /></div>
+                <div><label className={label}>Acrylic build · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.acrylic} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, acrylic: +e.target.value || 0 } })} /></div>
+                <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.minimumCharge} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, minimumCharge: +e.target.value || 0 } })} /></div>
+              </div>
+            </section>
+
             <button disabled={saving} onClick={() => save("quote", quote)} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
-              {saving ? "Saving…" : "Save Quote & Panaflex Pricing to Supabase"}
+              {saving ? "Saving…" : "Save Quote, Panaflex & Lightbox Pricing to Supabase"}
             </button>
           </div>
         )}

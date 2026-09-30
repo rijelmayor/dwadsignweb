@@ -86,6 +86,13 @@ export interface PanaflexPricing {
   minimumCharge: number;
 }
 
+/** Lightbox Round (max 3ft diameter) — rates are ₱ per sqft of the circular face area. */
+export interface LightboxRoundPricing {
+  builtUp: number;
+  acrylic: number;
+  minimumCharge: number;
+}
+
 export interface QuoteSettings {
   markupPct: number;
   vatPct: number;
@@ -93,7 +100,10 @@ export interface QuoteSettings {
   terms: string[];
   preparedByTitle: string;
   panaflexPricing: PanaflexPricing;
+  lightboxRoundPricing: LightboxRoundPricing;
 }
+
+export const DEFAULT_LIGHTBOX_ROUND_PRICING: LightboxRoundPricing = { builtUp: 0, acrylic: 0, minimumCharge: 0 };
 
 export const DEFAULT_PANAFLEX_PRICING: PanaflexPricing = {
   constructionPerSqft: 0,
@@ -128,6 +138,7 @@ export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   ],
   preparedByTitle: "Sales Specialist",
   panaflexPricing: DEFAULT_PANAFLEX_PRICING,
+  lightboxRoundPricing: DEFAULT_LIGHTBOX_ROUND_PRICING,
 };
 
 function num(v: unknown, fallback: number) {
@@ -140,7 +151,8 @@ function mergeNumberMap(raw: unknown, fallback: Record<string, number>) {
 }
 
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {
-  const r = (raw ?? {}) as Partial<QuoteSettings> & { panaflexPricing?: Partial<PanaflexPricing> };
+  const r = (raw ?? {}) as Partial<QuoteSettings> & { panaflexPricing?: Partial<PanaflexPricing>; lightboxRoundPricing?: Partial<LightboxRoundPricing> };
+  const lb: Partial<LightboxRoundPricing> = r.lightboxRoundPricing ?? {};
   const d = DEFAULT_QUOTE_SETTINGS;
   const p: Partial<PanaflexPricing> = r.panaflexPricing ?? {};
   return {
@@ -155,6 +167,11 @@ export function mergeQuoteSettings(raw: unknown): QuoteSettings {
       lighting: mergeNumberMap(p.lighting, d.panaflexPricing.lighting),
       printing: mergeNumberMap(p.printing, d.panaflexPricing.printing),
       minimumCharge: num(p.minimumCharge, d.panaflexPricing.minimumCharge),
+    },
+    lightboxRoundPricing: {
+      builtUp: num(lb.builtUp, d.lightboxRoundPricing.builtUp),
+      acrylic: num(lb.acrylic, d.lightboxRoundPricing.acrylic),
+      minimumCharge: num(lb.minimumCharge, d.lightboxRoundPricing.minimumCharge),
     },
   };
 }
