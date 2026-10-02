@@ -4,7 +4,7 @@ export interface Traits {
   frameThickness: number;
   metal: "primer" | "powder" | "aluminum";
   light: "none" | "exposed" | "internal" | "halo" | "frontlit" | "rgb";
-  mount: "wall" | "pole" | "rooftop" | "hanging" | "raceway";
+  mount: "wall" | "bracket" | "pole" | "rooftop" | "hanging" | "raceway";
   material: "acrylic" | "stainless";
   backing: "clear" | "black";
 }
@@ -34,7 +34,7 @@ export function deriveTraits(st: SignType, selections: Record<string, string>, t
     : has(light, /exposed/) ? "exposed"
     : "internal";
 
-  const mountMode: Traits["mount"] = has(mount, /pole|free/) ? "pole" : has(mount, /roof/) ? "rooftop" : has(mount, /hang|cable/) ? "hanging" : has(mount, /raceway/) ? "raceway" : "wall";
+  const mountMode: Traits["mount"] = has(mount, /bracket/) ? "bracket" : has(mount, /pole|free/) ? "pole" : has(mount, /roof/) ? "rooftop" : has(mount, /hang|cable/) ? "hanging" : has(mount, /raceway/) ? "raceway" : "wall";
 
   return {
     frameThickness,
