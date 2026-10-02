@@ -7,6 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import {
   DEFAULT_LANDING,
   DEFAULT_QUOTE_SETTINGS,
+  LIGHTBOX_RATES,
+  MATERIAL_RATES,
+  PRINTING_RATES,
   mergeLanding,
   mergeQuoteSettings,
   type LandingSettings,
@@ -35,6 +38,9 @@ export default function BuilderSettings() {
   const [tab, setTab] = useState<Tab>("landing");
   const [landing, setLanding] = useState<LandingSettings>(DEFAULT_LANDING);
   const [quote, setQuote] = useState<QuoteSettings>(DEFAULT_QUOTE_SETTINGS);
+  const setPricing = (patch: Partial<QuoteSettings["pricing"]>) => setQuote((q) => ({ ...q, pricing: { ...q.pricing, ...patch } }));
+  const setRate = (group: "materials" | "lightbox", id: string, key: "without" | "with", value: number) =>
+    setQuote((q) => ({ ...q, pricing: { ...q.pricing, [group]: { ...q.pricing[group], [id]: { ...q.pricing[group][id], [key]: value } } } }));
   const [catalog, setCatalog] = useState<SignType[]>(DEFAULT_SIGN_TYPES);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -320,64 +326,53 @@ export default function BuilderSettings() {
               <div><label className={label}>Terms (one per line)</label><textarea className={`${input} min-h-[120px]`} value={quote.terms.join("\n")} onChange={(e) => setQuote({ ...quote, terms: e.target.value.split("\n").map((t) => t.trim()).filter(Boolean) })} /></div>
             </section>
 
-            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-6">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Panaflex pricing engine</p>
-                <h2 className="font-display text-xl font-bold">Square-foot pricing</h2>
-                <p className="text-sm text-fog mt-1">These rates are stored in Supabase under <strong>site_settings → quote → panaflexPricing</strong>. The Quote Builder calculates area × rate, then applies the global markup.</p>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Pricing engine</p>
+                <h2 className="font-display text-xl font-bold">Square-foot pricing · without / with light</h2>
+                <p className="text-sm text-fog mt-1">Stored in Supabase under <strong>site_settings → quote → pricing</strong>. Every material has one rate per sqft for <strong>Without Light</strong> and one for <strong>With Light</strong>. The Quote Builder multiplies area × the matching rate (+ construction + printing), then applies the global markup.</p>
               </div>
 
               <div>
-                <label className={label}>Internal construction / frame rate · per sqft</label>
-                <input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.constructionPerSqft} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, constructionPerSqft: +e.target.value || 0 } })} />
-                <p className="text-[11px] text-fog mt-1">Not shown as a customer-facing frame option. It remains part of the internal cost calculation.</p>
+                <label className={label}>Internal construction / frame rate · ₱ per sqft</label>
+                <input type="number" min={0} step={0.01} className={input} value={quote.pricing.constructionPerSqft} onChange={(e) => setPricing({ constructionPerSqft: +e.target.value || 0 })} />
+                <p className="text-[11px] text-fog mt-1">Not shown to the customer. Added to every material except Sticker, Neon LED and Lightbox (their rate already covers the build).</p>
               </div>
 
               <div>
-                <h3 className="font-semibold mb-3">Service / material rate · ₱ / sqft (per face)</h3>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {([['panaflex','Panaflex'],['acrylic','Acrylic'],['neon','Neon LED'],['apc','APC'],['tarp','Tarp'],['sticker','Sticker'],['metal','Metal Sheet'],['custom','Custom']] as const).map(([id, name]) => (
-                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.face[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, face: { ...quote.panaflexPricing.face, [id]: +e.target.value || 0 } } })} /></div>
+                <h3 className="font-semibold mb-3">Material rates · ₱ / sqft</h3>
+                <div className="rounded-xl border border-line overflow-hidden">
+                  <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 bg-ink/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-fog">
+                    <span>Material type</span><span>Without light</span><span>With light</span>
+                  </div>
+                  {[...MATERIAL_RATES.map(([id, name]) => ({ group: "materials" as const, id, name })), ...LIGHTBOX_RATES.map(([id, name]) => ({ group: "lightbox" as const, id, name }))].map(({ group, id, name }) => (
+                    <div key={`${group}-${id}`} className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 items-center px-4 py-2 border-t border-line">
+                      <span className="text-sm font-semibold">{name}</span>
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group][id].without} onChange={(e) => setRate(group, id, "without", +e.target.value || 0)} />
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group][id].with} onChange={(e) => setRate(group, id, "with", +e.target.value || 0)} />
+                    </div>
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <h3 className="font-semibold mb-3">Lighting · ₱ / sqft</h3>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {([['without','Without Light'],['with','With Light']] as const).map(([id, name]) => (
-                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.lighting[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, lighting: { ...quote.panaflexPricing.lighting, [id]: +e.target.value || 0 } } })} /></div>
-                  ))}
-                </div>
+                <p className="text-[11px] text-fog mt-2">Lightbox circles are capped at 3 ft diameter in the builder. Double-face signs double the material and printing rates.</p>
               </div>
 
               <div>
                 <h3 className="font-semibold mb-3">Printing · ₱ / sqft</h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {([['direct','Direct to materials'],['sticker','Sticker print'],['cutout','Sticker Cut Out'],['uv','UV Print']] as const).map(([id, name]) => (
-                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.printing[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, printing: { ...quote.panaflexPricing.printing, [id]: +e.target.value || 0 } } })} /></div>
+                  {PRINTING_RATES.map(([id, name]) => (
+                    <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.printing[id]} onChange={(e) => setPricing({ printing: { ...quote.pricing.printing, [id]: +e.target.value || 0 } })} /></div>
                   ))}
                 </div>
               </div>
 
-              <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.minimumCharge} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, minimumCharge: +e.target.value || 0 } })} /></div>
-            </section>
-
-            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Lightbox pricing</p>
-                <h2 className="font-display text-xl font-bold">Lightbox · circle max 3 ft</h2>
-                <p className="text-sm text-fog mt-1">Stored under <strong>site_settings → quote → lightboxRoundPricing</strong>. Quote Builder calculates face area (circle π × r², or W × H) × rate, then applies the global markup.</p>
-              </div>
-              <div className="grid sm:grid-cols-3 gap-3">
-                <div><label className={label}>Built-up · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.builtUp} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, builtUp: +e.target.value || 0 } })} /></div>
-                <div><label className={label}>Acrylic build · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.acrylic} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, acrylic: +e.target.value || 0 } })} /></div>
-                <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.minimumCharge} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, minimumCharge: +e.target.value || 0 } })} /></div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div><label className={label}>Minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.minimumCharge} onChange={(e) => setPricing({ minimumCharge: +e.target.value || 0 })} /></div>
+                <div><label className={label}>Lightbox minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.lightboxMinimumCharge} onChange={(e) => setPricing({ lightboxMinimumCharge: +e.target.value || 0 })} /></div>
               </div>
             </section>
 
             <button disabled={saving} onClick={() => save("quote", quote)} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
-              {saving ? "Saving…" : "Save Quote, Panaflex & Lightbox Pricing to Supabase"}
+              {saving ? "Saving…" : "Save Quote & Pricing to Supabase"}
             </button>
           </div>
         )}
