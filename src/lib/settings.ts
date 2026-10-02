@@ -86,7 +86,7 @@ export interface PanaflexPricing {
   minimumCharge: number;
 }
 
-/** Lightbox Round (max 3ft diameter) — rates are ₱ per sqft of the circular face area. */
+/** Lightbox (circle max 3ft diameter) — rates are ₱ per sqft of the face area (circle or rectangle). */
 export interface LightboxRoundPricing {
   builtUp: number;
   acrylic: number;
@@ -114,6 +114,8 @@ export const DEFAULT_PANAFLEX_PRICING: PanaflexPricing = {
     acrylic: 0,
     metal: 0,
     custom: 0,
+    neon: 0,
+    sticker: 0,
   },
   lighting: {
     without: 0,
@@ -122,6 +124,7 @@ export const DEFAULT_PANAFLEX_PRICING: PanaflexPricing = {
   printing: {
     sticker: 0,
     direct: 0,
+    cutout: 0,
     uv: 0,
   },
   minimumCharge: 0,
