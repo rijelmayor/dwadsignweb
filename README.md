@@ -73,3 +73,7 @@ Next.js 15 · Tailwind 4 · React Three Fiber · Supabase · html-to-image
 
 ## Landing page visual settings
 Landing-page branding, hero/team image, service backgrounds, project image URLs, and project links are stored in the Supabase `site_settings` row with `key = landing`. Uploaded header logos are optimized for web display and a TIFF master is stored in `branding.logoTiffData`.
+
+## Landing project image storage
+
+For Projects / Work image uploads, run `supabase/migrations/20261002_landing_project_storage.sql` once in the Supabase SQL Editor. The Builder Settings uploader then stores project images in the `landing-assets` Storage bucket.

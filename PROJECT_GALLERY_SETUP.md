@@ -1,32 +1,37 @@
-# DW AdSign Project Gallery
+# DW AdSign — Projects / Work image gallery
 
-## New workflow
+## Supabase setup
 
-Builder Settings → Landing Page → Projects / Work:
+Run this migration once in your Supabase SQL Editor:
 
-1. Click **+ Add Project**.
-2. Enter the project title.
-3. Enter a category such as Signage, LED Neon, Large Format, Branding, or Wall Mural.
-4. Click **Choose image** and select the project image from your computer.
-5. Click **Save Landing Settings**.
+`supabase/migrations/20261002_landing_project_storage.sql`
 
-There is no Project URL field and no need to place portfolio images in GitHub.
+It creates the public `landing-assets` Storage bucket and the policies required for the Builder Settings image uploader.
 
-## Supabase
+You do **not** need to create the bucket manually.
 
-Run the complete `supabase/schema.sql` once in the Supabase SQL Editor. The appended section creates the public `landing-assets` bucket and the policies required for the Builder Settings upload.
+## Adding a project
 
-Each project image is stored as a separate object under `landing-assets/projects/`. The landing settings JSON stores only the resulting public image URL.
+Go to:
 
-## Portfolio behavior
+**Builder Settings → Landing Page → Projects / Work**
 
-The public Projects / Work section automatically:
+For each project:
 
-- creates category filters from project tags;
-- initially shows 9 projects;
-- adds a Load More button when there are more projects;
-- uses a varied editorial card layout instead of a monotonous grid;
-- opens each project in a full-screen glass viewer;
-- lazy-loads portfolio images.
+1. Add the project title.
+2. Select a category/tag.
+3. Choose the project image from your computer.
+4. Save Landing Settings.
 
-Existing project `url` values are preserved for compatibility, but the Builder Settings interface no longer asks you for them.
+The image is uploaded individually to Supabase Storage under `landing-assets/projects/`. The landing-page settings store the resulting public image address as project metadata.
+
+There is no need to enter an image URL and no need to place project images in GitHub.
+
+## Gallery behavior
+
+- Projects are displayed in an editorial/masonry-style portfolio.
+- Category filters are generated from project categories.
+- The first 9 projects are shown initially.
+- Additional projects are revealed with **Load More**.
+- Project images are lazy-loaded where supported.
+- Clicking a project opens the larger glassmorphism viewer.
