@@ -116,6 +116,7 @@ export default function BuilderSettings() {
   const [logoPreview, setLogoPreview] = useState("");
   const [teamFile, setTeamFile] = useState<File | null>(null);
   const [teamPreview, setTeamPreview] = useState("");
+  const [projectFiles, setProjectFiles] = useState<Record<number, File>>({});
 
   useEffect(() => {
     async function load() {
@@ -153,8 +154,27 @@ export default function BuilderSettings() {
         const team = await imageFileToOptimizedPng(teamFile);
         next = { ...next, branding: { ...next.branding, teamImage: team.png } };
       }
-      setLanding(next); setLogoPreview(next.branding.logoUrl); setTeamPreview(next.branding.teamImage); setLogoFile(null); setTeamFile(null);
       const sb = createClient();
+      if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); return; }
+
+      // Project images are stored individually in Supabase Storage. The landing JSON only keeps their public URLs.
+      if (Object.keys(projectFiles).length) {
+        const uploaded = [...next.projects];
+        for (const [indexText, file] of Object.entries(projectFiles)) {
+          const index = Number(indexText);
+          if (!uploaded[index]) continue;
+          const safeTitle = uploaded[index].title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+          const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+          const path = `projects/${Date.now()}-${crypto.randomUUID()}-${safeTitle}.${ext}`;
+          const { error: uploadError } = await sb.storage.from("landing-assets").upload(path, file, { upsert: false, contentType: file.type || "image/jpeg", cacheControl: "31536000" });
+          if (uploadError) throw new Error(`Project image upload failed: ${uploadError.message}. Run the landing-assets storage migration first.`);
+          const { data: publicData } = sb.storage.from("landing-assets").getPublicUrl(path);
+          uploaded[index] = { ...uploaded[index], image: publicData.publicUrl };
+        }
+        next = { ...next, projects: uploaded };
+      }
+
+      setLanding(next); setLogoPreview(next.branding.logoUrl); setTeamPreview(next.branding.teamImage); setLogoFile(null); setTeamFile(null); setProjectFiles({});
       if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); return; }
       const { error } = await sb.from("site_settings").upsert({ key: "landing", value: next, updated_at: new Date().toISOString() });
       setStatus(error ? `Error: ${error.message}` : "Landing page saved ✓ Logo converted to TIFF archive.");
@@ -232,9 +252,24 @@ export default function BuilderSettings() {
               {landing.services.map((s, i) => <div key={i} className="grid lg:grid-cols-[60px_1fr_1fr_auto] gap-3 items-start border-t border-line pt-4"><div><label className={label}>Icon</label><input className={input} value={s.icon} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, icon: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Title</label><input className={input} value={s.title} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, title: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Description</label><input className={input} value={s.desc} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, desc: e.target.value }; setLanding({ ...landing, services }); }} /></div><button className="text-red-400 text-sm mt-6" onClick={() => setLanding({ ...landing, services: landing.services.filter((_, j) => j !== i) })}>Remove</button></div>)}
             </section>
 
-            <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center"><div><h2 className="font-display text-xl font-bold">Projects / Work</h2><p className="text-xs text-fog mt-1">The URL is stored inside <code className="text-teal">site_settings → landing → projects[].url</code>. It does not need to be placed in the GitHub root.</p></div><button className="text-sm text-teal hover:underline" onClick={() => setLanding({ ...landing, projects: [...landing.projects, { title: "New project", tag: "", image: "", url: "" }] })}>+ Add</button></div>
-              {landing.projects.map((p, i) => <div key={i} className="grid lg:grid-cols-[1fr_1fr_1.5fr_1.5fr_auto] gap-3 border-t border-line pt-4"><div><label className={label}>Title</label><input className={input} value={p.title} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, title: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Tag</label><input className={input} value={p.tag} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, tag: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Image URL</label><input className={input} value={p.image} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, image: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Project URL</label><input className={input} placeholder="https://..." value={p.url} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, url: e.target.value }; setLanding({ ...landing, projects }); }} /></div><button className="text-red-400 text-sm self-end mb-2" onClick={() => setLanding({ ...landing, projects: landing.projects.filter((_, j) => j !== i) })}>✕</button></div>)}
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div><p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Portfolio manager</p><h2 className="font-display text-xl font-bold">Projects / Work</h2><p className="text-xs text-fog mt-1">No URLs or GitHub uploads needed. Every project gets its own image in Supabase Storage.</p></div>
+                <button className="rounded-full bg-teal px-4 py-2 text-sm font-bold text-ink hover:opacity-90" onClick={() => setLanding({ ...landing, projects: [...landing.projects, { title: "New project", tag: "", image: "", url: "" }] })}>+ Add Project</button>
+              </div>
+              <div className="rounded-xl border border-line bg-ink/40 p-4 text-xs text-fog">Tip: add as many projects as you want. The public portfolio automatically groups them by category, shows a polished gallery, and adds <strong className="text-white">Load more</strong> when the collection gets large.</div>
+              <div className="space-y-4">
+                {landing.projects.map((p, i) => <div key={i} className="grid lg:grid-cols-[110px_1fr_1fr_auto] gap-4 border-t border-line pt-4 items-start">
+                  <label className="relative block aspect-[4/3] rounded-xl overflow-hidden border border-line bg-ink cursor-pointer">
+                    {p.image ? <img src={p.image} alt="" className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center text-[11px] text-fog">No image</div>}
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setProjectFiles((files) => ({ ...files, [i]: f })); }} />
+                    <span className="absolute inset-x-1 bottom-1 rounded-lg bg-ink/80 px-2 py-1 text-center text-[10px] font-bold text-white backdrop-blur">{projectFiles[i] ? "Image selected" : "Choose image"}</span>
+                  </label>
+                  <div><label className={label}>Project title</label><input className={input} value={p.title} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, title: e.target.value }; setLanding({ ...landing, projects }); }} /></div>
+                  <div><label className={label}>Category</label><input className={input} placeholder="Signage, Branding, LED Neon…" value={p.tag} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, tag: e.target.value }; setLanding({ ...landing, projects }); }} /><p className="text-[10px] text-fog mt-1">Used for portfolio filters.</p></div>
+                  <button className="text-red-400 text-sm lg:mt-7" onClick={() => { const projects = landing.projects.filter((_, j) => j !== i); const files = { ...projectFiles }; delete files[i]; const shifted: Record<number, File> = {}; Object.entries(files).forEach(([k, v]) => { const n = Number(k); shifted[n > i ? n - 1 : n] = v; }); setProjectFiles(shifted); setLanding({ ...landing, projects }); }}>Remove</button>
+                </div>)}
+              </div>
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">

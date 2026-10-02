@@ -1,8 +1,10 @@
-# Landing Page Rework
+# DW AdSign Landing Page Changes
 
-- Builder Settings → Landing Page now controls the header logo, company name, hero team image, section/service background images, and project URLs.
-- Uploaded header logos are optimized for web display and a TIFF master is saved in `branding.logoTiffData`.
-- Project links are stored in Supabase `site_settings.value.projects[].url`; no GitHub-root file is required.
-- The hero no longer shows the floating DW mark; it uses the configurable team image.
-- Services and work cards use glassmorphism and liquid/water hover motion.
-- The supplied DW logo is installed as `public/dwlogo.png` and `public/logo-full.png`.
+- Header uses the supplied DW logo only; company text beside it is not rendered.
+- Hero floating mark replaced by configurable team image.
+- Services/visual sections support configurable background images.
+- Projects / Work uses direct image uploads to Supabase Storage instead of requiring image URLs.
+- Project categories drive automatic portfolio filters.
+- Portfolio initially shows 9 projects and progressively loads more.
+- Project cards open in a full-screen glassmorphism viewer.
+- Liquid/water hover treatment and spark navigation interactions are retained.
