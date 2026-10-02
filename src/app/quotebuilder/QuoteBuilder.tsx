@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_QUOTE_SETTINGS, mergeQuoteSettings, type QuoteSettings } from "@/lib/settings";
 import type { Traits } from "@/lib/traits";
 import { site } from "@/lib/site";
-import type { SignSceneHandle } from "@/components/SignScene";
+import type { SignSceneHandle, PolePlacement } from "@/components/SignScene";
 
 const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false });
 
@@ -53,8 +53,8 @@ interface ServiceDef {
   sub: string;
   /** default thickness (inches) applied when the service is picked */
   thicknessIn: number;
-  /** "always" = built-in light (lighting choice is locked to With Light) */
-  lit: "optional" | "always";
+  /** lighting selected by default when the service is picked (always changeable) */
+  defaultLight: "with" | "without";
   /** whether the Printing option applies to this service */
   printing: boolean;
   /** max diameter (ft) when the shape is a circle */
@@ -63,15 +63,15 @@ interface ServiceDef {
 
 /** Service / material type. Add a new service here (+ a rate in Builder Settings) to extend the builder. */
 const SERVICES: ServiceDef[] = [
-  { id: "panaflex", name: "Panaflex", sub: "Printed flex face", thicknessIn: 2, lit: "optional", printing: true },
-  { id: "lightbox", name: "Lightbox", sub: `Internally lit · circle max ${LB_MAX_FT} ft`, thicknessIn: 4, lit: "always", printing: false, circleMaxFt: LB_MAX_FT },
-  { id: "acrylic", name: "Acrylic", sub: "Acrylic panel face", thicknessIn: 1, lit: "optional", printing: true },
-  { id: "neon", name: "Neon LED", sub: "LED neon on backing · always lit", thicknessIn: 1.5, lit: "always", printing: false },
-  { id: "apc", name: "APC", sub: "Aluminum composite panel", thicknessIn: 2, lit: "optional", printing: true },
-  { id: "tarp", name: "Tarp", sub: "Tarpaulin on frame", thicknessIn: 2, lit: "optional", printing: true },
-  { id: "sticker", name: "Sticker", sub: "Flat adhesive sticker", thicknessIn: 0.25, lit: "optional", printing: true },
-  { id: "metal", name: "Metal Sheet", sub: "Metal sheet face", thicknessIn: 2, lit: "optional", printing: true },
-  { id: "custom", name: "Custom", sub: "Describe your own material", thicknessIn: 2, lit: "optional", printing: true },
+  { id: "panaflex", name: "Panaflex", sub: "Printed flex face", thicknessIn: 2, defaultLight: "without", printing: true },
+  { id: "lightbox", name: "Lightbox", sub: `Lit box · circle max ${LB_MAX_FT} ft`, thicknessIn: 4, defaultLight: "with", printing: true, circleMaxFt: LB_MAX_FT },
+  { id: "acrylic", name: "Acrylic", sub: "Acrylic panel face", thicknessIn: 1, defaultLight: "without", printing: true },
+  { id: "neon", name: "Neon LED", sub: "LED neon on backing", thicknessIn: 1.5, defaultLight: "with", printing: true },
+  { id: "apc", name: "APC", sub: "Aluminum composite panel", thicknessIn: 2, defaultLight: "without", printing: true },
+  { id: "tarp", name: "Tarp", sub: "Tarpaulin on frame", thicknessIn: 2, defaultLight: "without", printing: true },
+  { id: "sticker", name: "Sticker", sub: "Flat adhesive sticker", thicknessIn: 0.25, defaultLight: "without", printing: true },
+  { id: "metal", name: "Metal Sheet", sub: "Metal sheet face", thicknessIn: 2, defaultLight: "without", printing: true },
+  { id: "custom", name: "Custom", sub: "Describe your own material", thicknessIn: 2, defaultLight: "without", printing: true },
 ];
 const LB_BUILDS: [LbBuild, string, string][] = [
   ["builtup", "Built-up", "Metal returns, lit face"],
@@ -82,8 +82,13 @@ const SIDES_OPTIONS: [Sides, string, string][] = [
   ["double", "Double face", "Artwork on both sides (face + printing × 2)"],
 ];
 const MOUNTING_LABELS: Record<string, string> = {
-  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole mount", rooftop: "Rooftop with steel support",
+  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole mount", rooftop: "Rooftop support (at back)",
 };
+const POLE_PLACEMENTS: [PolePlacement, string, string][] = [
+  ["behind", "Behind the sign", "Poles at the back · sign faces straight"],
+  ["flanking", "Beside the sign", "Poles at the left / right edges"],
+  ["hanging", "Hanging", "Hung from a top arm / beam"],
+];
 
 const LIGHTING_OPTIONS = [["without", "Without Light"], ["with", "With Light"]] as const;
 const PRINTING_OPTIONS = [["direct", "Direct to materials"], ["sticker", "Sticker print"], ["cutout", "Sticker Cut Out"], ["uv", "UV Print"]] as const;
@@ -140,6 +145,8 @@ export default function QuoteBuilder() {
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
   const [mounting, setMounting] = useState<Mount>("wall");
+  const [poleCount, setPoleCount] = useState(1);
+  const [polePlacement, setPolePlacement] = useState<PolePlacement>("behind");
   const [note, setNote] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
@@ -170,8 +177,7 @@ export default function QuoteBuilder() {
   const isCircle = shape === "circle";
   const def = SERVICES.find((x) => x.id === serviceId) ?? SERVICES[0];
   const isLightbox = serviceId === "lightbox";
-  const alwaysLit = def.lit === "always";
-  const lit = alwaysLit || lighting === "with";
+  const lit = lighting === "with";
   const circleMax = isCircle ? def.circleMaxFt : undefined;
   const dimW = isCircle ? diameter : width;
   const dimH = isCircle ? diameter : height;
@@ -182,9 +188,16 @@ export default function QuoteBuilder() {
   const sidesLabel = sides === "double" ? "Double face" : "Single face";
   const serviceName = serviceId === "custom" && customName.trim() ? `Custom · ${customName.trim()}` : def.name;
   const faceLabel = isLightbox ? `Lightbox · ${lbBuildLabel}` : serviceName;
-  const lightingLabel = alwaysLit ? "Internal LED (always lit)" : labelOf(LIGHTING_OPTIONS, lighting);
+  const lightingLabel = labelOf(LIGHTING_OPTIONS, lighting);
   const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
   const variant = isLightbox ? lbBuild : "panaflex";
+
+  const poleMax = polePlacement === "hanging" ? 2 : 4;
+  const poles = useMemo(() => ({ count: Math.min(poleCount, poleMax), placement: polePlacement }), [poleCount, poleMax, polePlacement]);
+  const placementLabel = POLE_PLACEMENTS.find(([id]) => id === polePlacement)?.[1] ?? "";
+  const mountingText = mounting === "pole"
+    ? `Pole mount · ${poles.count} pole${poles.count > 1 ? "s" : ""} · ${placementLabel.toLowerCase()}`
+    : MOUNTING_LABELS[mounting];
 
   const traits = useMemo<Traits>(() => ({
     frameThickness: Math.max(0.02, thicknessIn / 12),
@@ -200,8 +213,9 @@ export default function QuoteBuilder() {
     if (isLightbox) {
       const lb = qs.lightboxRoundPricing;
       const rate = (lbBuild === "builtup" ? lb.builtUp : lb.acrylic) * sidesMult;
-      const rates = { construction: rate, face: 0, lighting: 0, printing: 0 };
-      const raw = rate * areaSqft;
+      const printRate = (qs.panaflexPricing.printing[printing] ?? 0) * sidesMult;
+      const rates = { construction: rate, face: 0, lighting: 0, printing: printRate };
+      const raw = (rate + printRate) * areaSqft;
       return { rates, raw, unitCost: Math.max(lb.minimumCharge || 0, raw * markup), hasTbd: rate <= 0 };
     }
     const p = qs.panaflexPricing;
@@ -210,12 +224,12 @@ export default function QuoteBuilder() {
     const rates = {
       construction: framed ? p.constructionPerSqft : 0,
       face: (p.face[serviceId] ?? 0) * sidesMult,
-      lighting: alwaysLit ? 0 : p.lighting[lighting] ?? 0,
+      lighting: p.lighting[lighting] ?? 0,
       printing: def.printing ? (p.printing[printing] ?? 0) * sidesMult : 0,
     };
     const raw = (rates.construction + rates.face + rates.lighting + rates.printing) * areaSqft;
     return { rates, raw, unitCost: Math.max(p.minimumCharge || 0, raw * markup), hasTbd: Object.values(rates).some((v) => v <= 0) && raw === 0 };
-  }, [qs, isLightbox, lbBuild, serviceId, lighting, printing, areaSqft, sidesMult, alwaysLit, def.printing]);
+  }, [qs, isLightbox, lbBuild, serviceId, lighting, printing, areaSqft, sidesMult, def.printing]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
@@ -225,6 +239,7 @@ export default function QuoteBuilder() {
     const nextDef = SERVICES.find((x) => x.id === id) ?? SERVICES[0];
     setServiceId(id);
     setThicknessIn(nextDef.thicknessIn);
+    setLighting(nextDef.defaultLight);
     if (shape === "circle" && nextDef.circleMaxFt) setDiameter((d) => Math.min(d, nextDef.circleMaxFt!));
   };
 
@@ -244,7 +259,7 @@ export default function QuoteBuilder() {
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, areaSqft, qty,
-      face: `${faceLabel} · ${sidesLabel}`, lighting: lightingLabel, printing: printingLabel, mounting, note, unitCost: live.unitCost,
+      face: `${faceLabel} · ${sidesLabel}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
       breakdown: {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
@@ -513,17 +528,13 @@ export default function QuoteBuilder() {
 
               <div>
                 <label className={labelCls}>Lighting</label>
-                {alwaysLit ? (
-                  <p className="text-xs text-fog rounded-lg bg-ink/50 border border-line px-3 py-2">{def.name} is internally lit by LED — lighting is included.</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {LIGHTING_OPTIONS.map(([id, name]) => (
-                      <button key={id} onClick={() => setLighting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${lighting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="grid grid-cols-2 gap-2">
+                  {LIGHTING_OPTIONS.map(([id, name]) => (
+                    <button key={id} onClick={() => setLighting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${lighting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {def.printing && (
@@ -549,6 +560,35 @@ export default function QuoteBuilder() {
                     </button>
                   ))}
                 </div>
+
+                {mounting === "pole" && (
+                  <div className="mt-3 space-y-3 rounded-xl border border-line bg-ink/30 p-3">
+                    <div>
+                      <label className={labelCls}>Pole placement</label>
+                      <div className="grid sm:grid-cols-3 gap-2">
+                        {POLE_PLACEMENTS.map(([id, name, sub]) => (
+                          <button key={id} onClick={() => setPolePlacement(id)} className={`rounded-xl border px-3 py-2.5 text-left transition ${polePlacement === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                            <span className="block text-sm font-semibold">{name}</span>
+                            <span className="block text-[11px] opacity-80 leading-snug">{sub}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Number of poles{polePlacement === "hanging" ? " · max 2" : ""}</label>
+                      <div className="flex gap-2">
+                        {Array.from({ length: poleMax }, (_, i) => i + 1).map((n) => (
+                          <button key={n} onClick={() => setPoleCount(n)} className={`w-12 rounded-xl border py-2.5 text-sm font-bold transition ${poles.count === n ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {mounting === "rooftop" && (
+                  <p className="mt-2 text-[11px] text-fog">Steel supports are placed at the back of the signage.</p>
+                )}
               </div>
             </div>
 
@@ -617,7 +657,8 @@ export default function QuoteBuilder() {
                   showDimensions
                   faceLabel={faceLabel}
                   sidesLabel={sidesLabel}
-                  mountLabel={MOUNTING_LABELS[mounting]}
+                  mountLabel={mountingText}
+                  poles={poles}
                   printingLabel={printingLabel || undefined}
                 />
               </div>
