@@ -39,12 +39,12 @@ export default function Navbar({
           : "border-transparent bg-ink/40 backdrop-blur-md supports-[backdrop-filter]:bg-ink/25"
       }`}
     >
-      <nav className="mx-auto max-w-7xl px-5 sm:px-6 h-[76px] flex items-center justify-between gap-6">
+      <nav className="mx-auto max-w-7xl px-5 sm:px-6 h-16 sm:h-[68px] flex items-center justify-between gap-6">
         <Link href="/" className="flex items-center min-w-0" aria-label={`${branding.companyName} — home`}>
           <img
             src={branding.logoUrl}
             alt={branding.companyName}
-            className="h-11 sm:h-12 w-auto max-w-[210px] object-contain transition hover:opacity-90"
+            className="h-9 sm:h-10 w-auto max-w-[180px] object-contain transition hover:opacity-90"
           />
         </Link>
         <div className="hidden md:flex items-center gap-7 text-sm text-fog">
