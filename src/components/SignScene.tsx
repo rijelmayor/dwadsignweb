@@ -10,10 +10,6 @@ import type { PreviewKind } from "@/lib/catalog";
 export type SignShape = "rect" | "circle";
 /** panaflex = flat face · builtup = metal-return lightbox · acrylic = acrylic-build lightbox */
 export type SceneVariant = "panaflex" | "builtup" | "acrylic";
-/** behind = poles at the back · flanking = poles beside the sign · hanging = hung from a top arm/beam */
-export type PolePlacement = "behind" | "flanking" | "hanging";
-export interface PoleConfig { count: number; placement: PolePlacement }
-
 export interface SignSceneHandle {
   /** Head-on view (W × H dimension lines) */
   captureFront: () => string | null;
@@ -45,8 +41,8 @@ interface SignSceneProps {
   /** Short chip labels shown over the 3D view */
   sidesLabel?: string;
   mountLabel?: string;
-  /** Pole mount layout (only used when traits.mount === "pole") */
-  poles?: PoleConfig;
+  /** Number of pole brackets (pole mount shows only the brackets, never the pole itself) */
+  brackets?: number;
   /** Extra height under the sign (pole / rooftop supports) — computed by SignScene */
   below?: number;
 }
@@ -223,21 +219,43 @@ function Plate({ pos, size, color = STEEL }: { pos: V3; size: V3; color?: string
   );
 }
 
-const HANG_RISE = 0.9;
-/** Extra height above the sign (hanging arm / beam). */
-function aboveFor(mount: Traits["mount"], poles?: PoleConfig) {
-  return mount === "pole" && poles?.placement === "hanging" ? HANG_RISE : 0;
-}
-
 /** Extra height needed under the sign for freestanding mounts. */
 function belowFor(mount: Traits["mount"], h: number) {
-  if (mount === "pole") return Math.min(5, Math.max(1.8, h * 0.9));
   if (mount === "rooftop") return 1.4;
   return 0;
 }
 
 /** Real, visible mounting hardware: wall slab, wall brackets, pole(s) or rooftop steel supports. */
-function Mounting({ mount, w, h, depth, below, poles }: { mount: Traits["mount"]; w: number; h: number; depth: number; below: number; poles?: PoleConfig }) {
+/** C-clamp pole bracket on the back of the sign (no pole drawn — the pole is not part of the quotation). */
+function PoleBracket({ x, y, back }: { x: number; y: number; back: number }) {
+  const R = 0.14;
+  const plateZ = back - 0.025;
+  const cz = back - 0.05 - 0.02;
+  return (
+    <group>
+      <Plate pos={[x, y, plateZ]} size={[0.42, 0.5, 0.05]} />
+      {[-0.13, 0.13].map((dy) => (
+        <group key={dy}>
+          <mesh position={[x, y + dy, cz - 0.02]} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[R, 0.034, 12, 28, Math.PI]} />
+            <meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.35} />
+          </mesh>
+          <Strut a={[x - R, y + dy, back - 0.05]} b={[x - R, y + dy, cz - 0.02]} r={0.034} />
+          <Strut a={[x + R, y + dy, back - 0.05]} b={[x + R, y + dy, cz - 0.02]} r={0.034} />
+        </group>
+      ))}
+      {/* clamp bolts */}
+      {[-R, R].map((dx) => (
+        <mesh key={dx} position={[x + dx, y, back - 0.075]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.1, 10]} />
+          <meshStandardMaterial color="#4b535b" metalness={0.7} roughness={0.3} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["mount"]; w: number; h: number; depth: number; below: number; brackets?: number }) {
   const back = -depth / 2;
   const bigW = Math.max(w, 2) * 4;
   const bigH = Math.max(h, 2) * 4;
@@ -279,95 +297,15 @@ function Mounting({ mount, w, h, depth, below, poles }: { mount: Traits["mount"]
   }
 
   if (mount === "pole") {
-    const placement: PolePlacement = poles?.placement ?? "behind";
-    const n = Math.max(1, Math.min(placement === "hanging" ? 2 : 4, Math.round(poles?.count ?? 1)));
-    const groundY = bottom - below;
-    const top = h / 2;
-    const ground = (
-      <mesh position={[0, groundY - 0.015, 0]}>
-        <boxGeometry args={[Math.max(w, 2) * 2.4, 0.03, 3]} />
-        <meshStandardMaterial color="#cfd5db" roughness={1} />
-      </mesh>
-    );
-    const behindXs = (k: number) => Array.from({ length: k }, (_, i) => (k === 1 ? 0 : -w / 2 + (w * (i + 0.5)) / k));
-    const base = (x: number, z: number) => <Plate pos={[x, groundY + 0.03, z]} size={[0.9, 0.06, 0.9]} />;
-
-    if (placement === "behind") {
-      const pz = back - 0.12;
-      return (
-        <group>
-          {ground}
-          {behindXs(n).map((x) => (
-            <group key={x}>
-              <Strut a={[x, groundY, pz]} b={[x, bottom + h * 0.75, pz]} r={0.11} />
-              {base(x, pz)}
-              <Plate pos={[x, bottom + h * 0.25, back - 0.03]} size={[0.3, 0.3, 0.06]} />
-              <Plate pos={[x, bottom + h * 0.7, back - 0.03]} size={[0.3, 0.3, 0.06]} />
-            </group>
-          ))}
-        </group>
-      );
-    }
-
-    if (placement === "flanking") {
-      const outer = n === 1 ? [-(w / 2 + 0.32)] : [-(w / 2 + 0.32), w / 2 + 0.32];
-      const extra = behindXs(Math.max(0, n - 2));
-      const poleTop = top + 0.35;
-      return (
-        <group>
-          {ground}
-          {outer.map((x) => {
-            const edge = x < 0 ? -w / 2 : w / 2;
-            return (
-              <group key={x}>
-                <Strut a={[x, groundY, 0]} b={[x, poleTop, 0]} r={0.11} />
-                {base(x, 0)}
-                {[bottom + h * 0.2, top - h * 0.2].map((y) => (
-                  <Strut key={y} a={[x, y, 0]} b={[edge, y, 0]} r={0.045} />
-                ))}
-              </group>
-            );
-          })}
-          {extra.map((x) => (
-            <group key={x}>
-              <Strut a={[x, groundY, back - 0.12]} b={[x, bottom + h * 0.7, back - 0.12]} r={0.1} />
-              {base(x, back - 0.12)}
-            </group>
-          ))}
-        </group>
-      );
-    }
-
-    // hanging — sign hangs from a top arm (1 pole = cantilever) or a beam between two poles
-    const topY = top + HANG_RISE;
-    const hangXs = w >= 3 ? [-w * 0.3, w * 0.3] : [0];
-    const px = w / 2 + 0.35;
+    // Pole bracket only: 1 bracket centred, or 2 spread along the long side of a larger rectangle.
+    const n = Math.max(1, Math.min(2, Math.round(brackets)));
+    const wide = w >= h;
+    const spots: [number, number][] =
+      n === 1 ? [[0, 0]] : wide ? [[-w * 0.3, 0], [w * 0.3, 0]] : [[0, -h * 0.3], [0, h * 0.3]];
     return (
       <group>
-        {ground}
-        {n === 1 ? (
-          <group>
-            <Strut a={[-px, groundY, 0]} b={[-px, topY, 0]} r={0.11} />
-            {base(-px, 0)}
-            <Strut a={[-px, topY, 0]} b={[w / 2 + 0.15, topY, 0]} r={0.07} />
-            <Strut a={[-px, topY - 0.9, 0]} b={[-px + Math.max(0.9, w * 0.3), topY, 0]} r={0.04} />
-          </group>
-        ) : (
-          <group>
-            {[-px, px].map((x) => (
-              <group key={x}>
-                <Strut a={[x, groundY, 0]} b={[x, topY + 0.05, 0]} r={0.11} />
-                {base(x, 0)}
-              </group>
-            ))}
-            <Strut a={[-px, topY, 0]} b={[px, topY, 0]} r={0.07} />
-          </group>
-        )}
-        {hangXs.map((x) => (
-          <group key={x}>
-            <Strut a={[x, topY, 0]} b={[x, top, 0]} r={0.025} />
-            <Plate pos={[x, top + 0.01, 0]} size={[0.16, 0.05, Math.max(depth, 0.1) + 0.04]} />
-          </group>
+        {spots.map(([x, y]) => (
+          <PoleBracket key={`${x}_${y}`} x={x} y={y} back={back} />
         ))}
       </group>
     );
@@ -430,7 +368,7 @@ function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outlin
   );
 }
 
-function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, poles }: SignSceneProps) {
+function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets }: SignSceneProps) {
   const w = Math.max(0.5, widthFt);
   const h = Math.max(0.3, heightFt);
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -461,8 +399,8 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   );
 
   return (
-    <group position={[0, (below - aboveFor(traits.mount, poles)) / 2, 0]}>
-      <Mounting mount={traits.mount} w={w} h={h} depth={depth} below={below} poles={poles} />
+    <group position={[0, below / 2, 0]}>
+      <Mounting mount={traits.mount} w={w} h={h} depth={depth} below={below} brackets={brackets} />
 
       {isLightbox ? (
         <RoundedBox args={[w, h, depth]} radius={0.02} castShadow receiveShadow>
@@ -498,7 +436,7 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   );
 }
 
-function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, poles }: SignSceneProps) {
+function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets }: SignSceneProps) {
   const d = Math.max(0.5, widthFt);
   const r = d / 2;
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -548,8 +486,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
   );
 
   return (
-    <group position={[0, (below - aboveFor(traits.mount, poles)) / 2, 0]}>
-      <Mounting mount={traits.mount} w={d} h={d} depth={depth} below={below} poles={poles} />
+    <group position={[0, below / 2, 0]}>
+      <Mounting mount={traits.mount} w={d} h={d} depth={depth} below={below} brackets={brackets} />
 
       {builtup && (
         <mesh rotation={rotX}>
@@ -630,7 +568,7 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
   const hh = shape === "circle" ? widthFt : heightFt;
   const below = belowFor(props.traits.mount, hh);
   // Frame the whole composition (sign + pole / rooftop supports), not just the sign
-  const maxDim = Math.max(widthFt + (props.traits.mount === "pole" && props.poles?.placement !== "behind" ? 1.2 : 0), hh + below + aboveFor(props.traits.mount, props.poles), 1);
+  const maxDim = Math.max(widthFt, hh + below, 1);
   // Pull camera back enough so big dim labels fit in frame
   const camDist = maxDim * 2.6 + 2.2;
   const apiRef = useRef<CaptureApi | null>(null);
