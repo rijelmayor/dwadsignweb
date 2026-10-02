@@ -16,15 +16,11 @@ export default function Navbar({ quoteUrl, ctaLabel, branding }: { quoteUrl: str
   return (
     <header className="fixed top-0 inset-x-0 z-50 border-b border-white/10 bg-ink/65 backdrop-blur-xl supports-[backdrop-filter]:bg-ink/45">
       <nav className="mx-auto max-w-7xl px-5 sm:px-6 h-[76px] flex items-center justify-between gap-6">
-        <Link href="/" className="flex items-center gap-3 min-w-0" aria-label={`${branding.companyName} — home`}>
-          <img src={branding.logoUrl} alt={branding.companyName} className="h-11 sm:h-12 w-auto max-w-[190px] object-contain" />
-          <span className="hidden md:block leading-none min-w-0">
-            <span className="block font-display text-lg font-bold tracking-tight truncate">{branding.companyName}</span>
-            <span className="block mt-1 text-[9px] tracking-[0.25em] uppercase text-fog">Advertising & Signages</span>
-          </span>
+        <Link href="/" className="flex items-center min-w-0" aria-label={`${branding.companyName} — home`}>
+          <img src={branding.logoUrl} alt={branding.companyName} className="h-11 sm:h-12 w-auto max-w-[210px] object-contain" />
         </Link>
         <div className="hidden md:flex items-center gap-7 text-sm text-fog">
-          {NAV.map((item) => <Link key={item.href} href={item.href} className="hover:text-white transition">{item.label}</Link>)}
+          {NAV.map((item) => <Link key={item.href} href={item.href} className="nav-spark relative inline-flex items-center hover:text-white transition">{item.label}</Link>)}
           <a href={quoteUrl} target="_blank" rel="noopener noreferrer" className="rounded-full bg-gold px-5 py-2.5 font-semibold text-ink hover:bg-gold-dim transition">{ctaLabel}</a>
         </div>
         <button className="md:hidden text-white text-xl" onClick={() => setOpen(!open)} aria-label="Menu">{open ? "✕" : "☰"}</button>

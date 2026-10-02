@@ -42,6 +42,53 @@ body { @apply bg-ink text-white font-body antialiased; }
   .print-sheet .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
 }
 
+
+/* Navigation sparkle hover */
+.nav-spark {
+  isolation: isolate;
+  padding: .35rem .15rem;
+}
+.nav-spark::before,
+.nav-spark::after {
+  content: "✦";
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+  color: var(--color-teal);
+  opacity: 0;
+  transform: scale(.2) rotate(-20deg);
+  text-shadow: 0 0 10px rgba(30,202,201,.85), 0 0 18px rgba(243,179,60,.45);
+}
+.nav-spark::before {
+  top: -7px;
+  right: -9px;
+  font-size: 10px;
+}
+.nav-spark::after {
+  bottom: -6px;
+  left: -10px;
+  color: var(--color-gold);
+  font-size: 8px;
+}
+.nav-spark:hover::before {
+  animation: navSpark .65s cubic-bezier(.2,.8,.2,1) forwards;
+}
+.nav-spark:hover::after {
+  animation: navSpark .65s .1s cubic-bezier(.2,.8,.2,1) forwards;
+}
+@keyframes navSpark {
+  0% { opacity: 0; transform: scale(.15) rotate(-30deg) translate3d(-2px, 2px, 0); }
+  35% { opacity: 1; transform: scale(1.15) rotate(8deg) translate3d(0, 0, 0); }
+  70% { opacity: .8; transform: scale(.8) rotate(35deg) translate3d(2px, -2px, 0); }
+  100% { opacity: 0; transform: scale(.2) rotate(60deg) translate3d(5px, -5px, 0); }
+}
+.nav-spark:hover {
+  text-shadow: 0 0 12px rgba(255,255,255,.28);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-spark:hover::before, .nav-spark:hover::after { animation: none !important; }
+}
+
 /* DW AdSign landing system: glass + liquid/water motion */
 .glass-panel {
   background: linear-gradient(135deg, rgba(255,255,255,.09), rgba(255,255,255,.025));
