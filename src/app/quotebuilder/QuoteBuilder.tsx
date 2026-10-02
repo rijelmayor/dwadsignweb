@@ -5,17 +5,18 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { DEFAULT_SIGN_TYPES, mergeCatalog, type SignType } from "@/lib/catalog";
 import { DEFAULT_QUOTE_SETTINGS, mergeQuoteSettings, type QuoteSettings } from "@/lib/settings";
-import { deriveTraits, type Traits } from "@/lib/traits";
+import type { Traits } from "@/lib/traits";
 import { site } from "@/lib/site";
 import type { SignSceneHandle } from "@/components/SignScene";
 
 const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false });
 
 type Shape = "rect" | "circle";
-type ServiceId = "panaflex" | "lightbox-round";
+type ServiceId = "panaflex" | "lightbox" | "acrylic" | "neon" | "apc" | "tarp" | "sticker" | "metal" | "custom";
 type LbBuild = "builtup" | "acrylic";
+type Mount = "wall" | "bracket" | "pole" | "rooftop";
+type Sides = "single" | "double";
 
 interface LineItem {
   id: string;
@@ -46,22 +47,78 @@ interface ClientInfo { name: string; company: string; email: string; phone: stri
 
 const LB_MAX_FT = 3;
 
-/** Category services. Add a new service here (+ pricing in settings) to extend the builder. */
-const SERVICES: { id: ServiceId; name: string; sub: string; shapes: Shape[] }[] = [
-  { id: "panaflex", name: "Panaflex", sub: "Face · lighting · printing", shapes: ["rect", "circle"] },
-  { id: "lightbox-round", name: "Lightbox Round", sub: `Max ${LB_MAX_FT} ft diameter`, shapes: ["circle"] },
+interface ServiceDef {
+  id: ServiceId;
+  name: string;
+  sub: string;
+  /** default thickness (inches) applied when the service is picked */
+  thicknessIn: number;
+  /** "always" = built-in light (lighting choice is locked to With Light) */
+  lit: "optional" | "always";
+  /** whether the Printing option applies to this service */
+  printing: boolean;
+  /** max diameter (ft) when the shape is a circle */
+  circleMaxFt?: number;
+}
+
+/** Service / material type. Add a new service here (+ a rate in Builder Settings) to extend the builder. */
+const SERVICES: ServiceDef[] = [
+  { id: "panaflex", name: "Panaflex", sub: "Printed flex face", thicknessIn: 2, lit: "optional", printing: true },
+  { id: "lightbox", name: "Lightbox", sub: `Internally lit · circle max ${LB_MAX_FT} ft`, thicknessIn: 4, lit: "always", printing: false, circleMaxFt: LB_MAX_FT },
+  { id: "acrylic", name: "Acrylic", sub: "Acrylic panel face", thicknessIn: 1, lit: "optional", printing: true },
+  { id: "neon", name: "Neon LED", sub: "LED neon on backing · always lit", thicknessIn: 1.5, lit: "always", printing: false },
+  { id: "apc", name: "APC", sub: "Aluminum composite panel", thicknessIn: 2, lit: "optional", printing: true },
+  { id: "tarp", name: "Tarp", sub: "Tarpaulin on frame", thicknessIn: 2, lit: "optional", printing: true },
+  { id: "sticker", name: "Sticker", sub: "Flat adhesive sticker", thicknessIn: 0.25, lit: "optional", printing: true },
+  { id: "metal", name: "Metal Sheet", sub: "Metal sheet face", thicknessIn: 2, lit: "optional", printing: true },
+  { id: "custom", name: "Custom", sub: "Describe your own material", thicknessIn: 2, lit: "optional", printing: true },
 ];
 const LB_BUILDS: [LbBuild, string, string][] = [
   ["builtup", "Built-up", "Metal returns, lit face"],
   ["acrylic", "Acrylic build", "Acrylic body, lit face"],
 ];
-const MOUNTING_LABELS: Record<string, string> = { wall: "Wall-mounted", pole: "Pole / freestanding", rooftop: "Rooftop with steel support" };
+const SIDES_OPTIONS: [Sides, string, string][] = [
+  ["single", "Single face", "Artwork on the front only"],
+  ["double", "Double face", "Artwork on both sides (face + printing × 2)"],
+];
+const MOUNTING_LABELS: Record<string, string> = {
+  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole mount", rooftop: "Rooftop with steel support",
+};
 
-const FACE_OPTIONS = [
-  ["panaflex", "Panaflex"], ["tarp", "Tarp"], ["apc", "APC"], ["acrylic", "Acrylic"], ["metal", "Metal Sheet"], ["custom", "Custom Build Face"],
-] as const;
 const LIGHTING_OPTIONS = [["without", "Without Light"], ["with", "With Light"]] as const;
-const PRINTING_OPTIONS = [["sticker", "Sticker print"], ["direct", "Direct print to materials"], ["uv", "UV print"]] as const;
+const PRINTING_OPTIONS = [["direct", "Direct to materials"], ["sticker", "Sticker print"], ["cutout", "Sticker Cut Out"], ["uv", "UV Print"]] as const;
+
+/** Mini side-view icons so the mounting choice is visual. */
+function MountIcon({ id }: { id: Mount }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return (
+    <svg width="56" height="44" viewBox="0 0 56 44" aria-hidden>
+      {id === "wall" && (<><rect x="6" y="3" width="6" height="38" {...common} /><rect x="12" y="10" width="5" height="24" fill="currentColor" stroke="none" /></>)}
+      {id === "bracket" && (
+        <>
+          <rect x="4" y="3" width="6" height="38" {...common} />
+          <path d="M10 13 H24 M10 31 H24 M10 20 L18 13 M10 38 L18 31" {...common} />
+          <rect x="24" y="8" width="5" height="28" fill="currentColor" stroke="none" />
+        </>
+      )}
+      {id === "pole" && (
+        <>
+          <path d="M6 41 H50" {...common} />
+          <path d="M28 41 V18" {...common} strokeWidth={3} />
+          <rect x="14" y="5" width="28" height="12" fill="currentColor" stroke="none" />
+        </>
+      )}
+      {id === "rooftop" && (
+        <>
+          <path d="M4 41 H52" {...common} strokeWidth={3} />
+          <path d="M22 41 V20 M22 41 L40 24" {...common} />
+          <path d="M40 41 L22 24" {...common} />
+          <rect x="14" y="5" width="28" height="12" fill="currentColor" stroke="none" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 const ft = (n: number) => `${Math.round(n * 100) / 100}`;
 function fmt(n: number) { return n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -69,20 +126,20 @@ function today() { return new Date().toLocaleDateString("en-PH", { year: "numeri
 function labelOf(options: readonly (readonly [string, string])[], id: string) { return options.find(([v]) => v === id)?.[1] ?? id; }
 
 export default function QuoteBuilder() {
-  const [catalog, setCatalog] = useState<SignType[]>(DEFAULT_SIGN_TYPES);
   const [qs, setQs] = useState<QuoteSettings>(DEFAULT_QUOTE_SETTINGS);
   const [shape, setShape] = useState<Shape>("rect");
   const [serviceId, setServiceId] = useState<ServiceId>("panaflex");
+  const [sides, setSides] = useState<Sides>("single");
+  const [customName, setCustomName] = useState("");
   const [lbBuild, setLbBuild] = useState<LbBuild>("builtup");
   const [width, setWidth] = useState(4);
   const [height, setHeight] = useState(2);
   const [diameter, setDiameter] = useState(2);
   const [thicknessIn, setThicknessIn] = useState(2);
   const [qty, setQty] = useState(1);
-  const [face, setFace] = useState("panaflex");
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
-  const [mounting, setMounting] = useState("wall");
+  const [mounting, setMounting] = useState<Mount>("wall");
   const [note, setNote] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
@@ -102,9 +159,8 @@ export default function QuoteBuilder() {
       const sb = createClient();
       setSupabaseOk(!!sb);
       if (!sb) return;
-      const { data } = await sb.from("site_settings").select("key,value").in("key", ["catalog", "quote"]);
+      const { data } = await sb.from("site_settings").select("key,value").in("key", ["quote"]);
       for (const row of data ?? []) {
-        if (row.key === "catalog") setCatalog(mergeCatalog(row.value));
         if (row.key === "quote") setQs(mergeQuoteSettings(row.value));
       }
     }
@@ -112,55 +168,64 @@ export default function QuoteBuilder() {
   }, []);
 
   const isCircle = shape === "circle";
-  const isLightbox = serviceId === "lightbox-round";
-  const service = SERVICES.find((x) => x.id === serviceId) ?? SERVICES[0];
-  const panaflexType = catalog.find((x) => x.id === "panaflex") ?? catalog[0];
+  const def = SERVICES.find((x) => x.id === serviceId) ?? SERVICES[0];
+  const isLightbox = serviceId === "lightbox";
+  const alwaysLit = def.lit === "always";
+  const lit = alwaysLit || lighting === "with";
+  const circleMax = isCircle ? def.circleMaxFt : undefined;
   const dimW = isCircle ? diameter : width;
   const dimH = isCircle ? diameter : height;
   const areaSqft = Math.max(0, isCircle ? Math.PI * (diameter / 2) ** 2 : width * height);
   const activeLogo = logoPreview || logoUrl || undefined;
   const lbBuildLabel = LB_BUILDS.find(([id]) => id === lbBuild)?.[1] ?? "";
-  const faceLabel = isLightbox ? `Lightbox Round · ${lbBuildLabel}` : labelOf(FACE_OPTIONS, face);
-  const lightingLabel = isLightbox ? "Internal LED (always lit)" : labelOf(LIGHTING_OPTIONS, lighting);
-  const printingLabel = isLightbox ? "" : labelOf(PRINTING_OPTIONS, printing);
+  const sidesMult = sides === "double" ? 2 : 1;
+  const sidesLabel = sides === "double" ? "Double face" : "Single face";
+  const serviceName = serviceId === "custom" && customName.trim() ? `Custom · ${customName.trim()}` : def.name;
+  const faceLabel = isLightbox ? `Lightbox · ${lbBuildLabel}` : serviceName;
+  const lightingLabel = alwaysLit ? "Internal LED (always lit)" : labelOf(LIGHTING_OPTIONS, lighting);
+  const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
   const variant = isLightbox ? lbBuild : "panaflex";
 
-  const traits = useMemo(() => {
-    if (isLightbox) {
-      return { frameThickness: Math.max(0.04, thicknessIn / 12), metal: "aluminum", light: "internal", mount: mounting === "pole" ? "pole" : "wall", material: "acrylic", backing: "clear" } as Traits;
-    }
-    return panaflexType ? deriveTraits(panaflexType, { lighting, mounting, face }, thicknessIn) : null;
-  }, [isLightbox, panaflexType, lighting, mounting, face, thicknessIn]);
+  const traits = useMemo<Traits>(() => ({
+    frameThickness: Math.max(0.02, thicknessIn / 12),
+    metal: isLightbox ? "aluminum" : "primer",
+    light: lit ? "internal" : "none",
+    mount: mounting,
+    material: serviceId === "metal" ? "stainless" : "acrylic",
+    backing: "clear",
+  }), [thicknessIn, isLightbox, lit, mounting, serviceId]);
 
   const live = useMemo(() => {
     const markup = 1 + qs.markupPct / 100;
     if (isLightbox) {
       const lb = qs.lightboxRoundPricing;
-      const rate = lbBuild === "builtup" ? lb.builtUp : lb.acrylic;
+      const rate = (lbBuild === "builtup" ? lb.builtUp : lb.acrylic) * sidesMult;
       const rates = { construction: rate, face: 0, lighting: 0, printing: 0 };
       const raw = rate * areaSqft;
       return { rates, raw, unitCost: Math.max(lb.minimumCharge || 0, raw * markup), hasTbd: rate <= 0 };
     }
     const p = qs.panaflexPricing;
-    const rates = { construction: p.constructionPerSqft, face: p.face[face] ?? 0, lighting: p.lighting[lighting] ?? 0, printing: p.printing[printing] ?? 0 };
+    // Sticker and neon have no internal frame; every other service uses the internal construction rate.
+    const framed = serviceId !== "sticker" && serviceId !== "neon";
+    const rates = {
+      construction: framed ? p.constructionPerSqft : 0,
+      face: (p.face[serviceId] ?? 0) * sidesMult,
+      lighting: alwaysLit ? 0 : p.lighting[lighting] ?? 0,
+      printing: def.printing ? (p.printing[printing] ?? 0) * sidesMult : 0,
+    };
     const raw = (rates.construction + rates.face + rates.lighting + rates.printing) * areaSqft;
     return { rates, raw, unitCost: Math.max(p.minimumCharge || 0, raw * markup), hasTbd: Object.values(rates).some((v) => v <= 0) && raw === 0 };
-  }, [qs, isLightbox, lbBuild, face, lighting, printing, areaSqft]);
+  }, [qs, isLightbox, lbBuild, serviceId, lighting, printing, areaSqft, sidesMult, alwaysLit, def.printing]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
-    if (next === "rect" && isLightbox) { setServiceId("panaflex"); setThicknessIn(2); }
+    if (next === "circle" && def.circleMaxFt) setDiameter((d) => Math.min(d, def.circleMaxFt!));
   };
   const pickService = (id: ServiceId) => {
+    const nextDef = SERVICES.find((x) => x.id === id) ?? SERVICES[0];
     setServiceId(id);
-    if (id === "lightbox-round") {
-      setShape("circle");
-      setDiameter((d) => Math.min(d, LB_MAX_FT));
-      setThicknessIn(4);
-      if (mounting === "rooftop") setMounting("wall");
-    } else {
-      setThicknessIn(2);
-    }
+    setThicknessIn(nextDef.thicknessIn);
+    if (shape === "circle" && nextDef.circleMaxFt) setDiameter((d) => Math.min(d, nextDef.circleMaxFt!));
   };
 
   const onLogoFile = (file: File | null) => {
@@ -169,7 +234,7 @@ export default function QuoteBuilder() {
   };
 
   const addLine = () => {
-    if (!traits || areaSqft <= 0) return;
+    if (areaSqft <= 0) return;
     const renders = {
       front: sceneRef.current?.captureFront() ?? null,
       side: sceneRef.current?.captureSide() ?? null,
@@ -177,9 +242,9 @@ export default function QuoteBuilder() {
     };
     const r = live.rates;
     setLines((prev) => [...prev, {
-      id: crypto.randomUUID(), serviceId, signName: isLightbox ? "Lightbox Round" : "Panaflex Sign", shape,
+      id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, areaSqft, qty,
-      face: faceLabel, lighting: lightingLabel, printing: printingLabel, mounting, note, unitCost: live.unitCost,
+      face: `${faceLabel} · ${sidesLabel}`, lighting: lightingLabel, printing: printingLabel, mounting, note, unitCost: live.unitCost,
       breakdown: {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
@@ -312,7 +377,6 @@ export default function QuoteBuilder() {
           {/* LEFT — controls */}
           <section className="space-y-4">
             <div className="rounded-2xl border border-line bg-panel p-5">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">{service.name}{isLightbox ? ` · ${lbBuildLabel}` : ""}</p>
               <h1 className="font-display text-2xl font-bold">Sign Builder</h1>
               <p className="text-sm text-fog mt-1">Pick the shape, choose the service, then set size. Live 3D updates on the right.</p>
             </div>
@@ -338,56 +402,48 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
-            {/* 2 · Service / material */}
+            {/* 2 · Service (material type) */}
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>2 · Service</p>
                 <h2 className="font-display text-lg font-bold">Material type</h2>
               </div>
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {SERVICES.map((sv) => {
-                  const allowed = sv.shapes.includes(shape);
                   const active = serviceId === sv.id;
                   return (
                     <button
                       key={sv.id}
-                      disabled={!allowed}
                       onClick={() => pickService(sv.id)}
-                      className={`rounded-xl border px-4 py-3.5 text-left transition ${active ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"} ${!allowed ? "opacity-40 cursor-not-allowed hover:border-line" : ""}`}
+                      className={`rounded-xl border px-3 py-3 text-left transition ${active ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}
                     >
                       <span className="block font-bold text-sm">{sv.name}</span>
-                      <span className="block text-[11px] opacity-80">{allowed ? sv.sub : "Circle shape only"}</span>
+                      <span className="block text-[11px] opacity-80 leading-snug">{sv.sub}</span>
                     </button>
                   );
                 })}
               </div>
-              {isLightbox && (
+              {serviceId === "custom" && (
                 <div>
-                  <label className={labelCls}>Lightbox build</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {LB_BUILDS.map(([id, name, sub]) => (
-                      <button key={id} onClick={() => setLbBuild(id)} className={`rounded-xl border px-3 py-3 text-left transition ${lbBuild === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
-                        <span className="block text-sm font-semibold">{name}</span>
-                        <span className="block text-[11px] opacity-80">{sub}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <label className={labelCls}>Custom material</label>
+                  <input className={inputCls} value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Stainless letters on wood panel" />
                 </div>
               )}
             </div>
 
-            {/* 3 · Dimensions */}
+            {/* 3 · Dimensions — format follows the shape + the selected service */}
             <div className={cardCls}>
               <div>
-                <p className={stepCls}>3 · Dimensions</p>
-                <h2 className="font-display text-lg font-bold">Sign size</h2>
+                <p className={stepCls}>3 · Dimension</p>
+                <h2 className="font-display text-lg font-bold">{def.name} · {isCircle ? "Diameter" : "Width × Height"}</h2>
+                {circleMax && <p className="text-[11px] text-fog mt-0.5">{def.name} circle: maximum {circleMax} ft diameter.</p>}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {isCircle ? (
                   <div className="col-span-2">
-                    <label className={labelCls}>Diameter (ft){isLightbox ? ` · max ${LB_MAX_FT}` : ""}</label>
-                    <input type="number" min={0.1} max={isLightbox ? LB_MAX_FT : undefined} step={0.1} value={diameter}
-                      onChange={(e) => setDiameter(Math.min(isLightbox ? LB_MAX_FT : Infinity, Math.max(0.1, +e.target.value || 0)))} className={inputCls} />
+                    <label className={labelCls}>Diameter (ft){circleMax ? ` · max ${circleMax}` : ""}</label>
+                    <input type="number" min={0.1} max={circleMax} step={0.1} value={diameter}
+                      onChange={(e) => setDiameter(Math.min(circleMax ?? Infinity, Math.max(0.1, +e.target.value || 0)))} className={inputCls} />
                   </div>
                 ) : (
                   <>
@@ -426,54 +482,73 @@ export default function QuoteBuilder() {
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>4 · Build</p>
-                <h2 className="font-display text-lg font-bold">{isLightbox ? "Lightbox & mounting" : "Face, lighting & printing"}</h2>
+                <h2 className="font-display text-lg font-bold">Face, lighting, printing &amp; mounting</h2>
               </div>
-              {!isLightbox && (
-                <>
-                  <div>
-                    <label className={labelCls}>Face</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {FACE_OPTIONS.map(([id, name]) => (
-                        <button key={id} onClick={() => setFace(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold text-left transition ${face === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Lighting</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {LIGHTING_OPTIONS.map(([id, name]) => (
-                        <button key={id} onClick={() => setLighting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${lighting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Printing</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {PRINTING_OPTIONS.map(([id, name]) => (
-                        <button key={id} onClick={() => setPrinting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${printing === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
+
               {isLightbox && (
-                <p className="text-xs text-fog rounded-lg bg-ink/50 border border-line px-3 py-2">
-                  {lbBuildLabel} lightbox · internally lit by LED. Priced by circle area from Builder Settings.
-                </p>
+                <div>
+                  <label className={labelCls}>Lightbox build</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {LB_BUILDS.map(([id, name, sub]) => (
+                      <button key={id} onClick={() => setLbBuild(id)} className={`rounded-xl border px-3 py-3 text-left transition ${lbBuild === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                        <span className="block text-sm font-semibold">{name}</span>
+                        <span className="block text-[11px] opacity-80">{sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
+
+              <div>
+                <label className={labelCls}>Face</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SIDES_OPTIONS.map(([id, name, sub]) => (
+                    <button key={id} onClick={() => setSides(id)} className={`rounded-xl border px-3 py-3 text-left transition ${sides === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                      <span className="block text-sm font-semibold">{name}</span>
+                      <span className="block text-[11px] opacity-80">{sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Lighting</label>
+                {alwaysLit ? (
+                  <p className="text-xs text-fog rounded-lg bg-ink/50 border border-line px-3 py-2">{def.name} is internally lit by LED — lighting is included.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {LIGHTING_OPTIONS.map(([id, name]) => (
+                      <button key={id} onClick={() => setLighting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${lighting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {def.printing && (
+                <div>
+                  <label className={labelCls}>Printing</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {PRINTING_OPTIONS.map(([id, name]) => (
+                      <button key={id} onClick={() => setPrinting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold text-left transition ${printing === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className={labelCls}>Mounting</label>
-                <select value={mounting} onChange={(e) => setMounting(e.target.value)} className={inputCls}>
-                  <option value="wall">Wall-mounted</option>
-                  <option value="pole">Pole / freestanding</option>
-                  {!isLightbox && <option value="rooftop">Rooftop with steel support</option>}
-                </select>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(["wall", "bracket", "pole", "rooftop"] as Mount[]).map((id) => (
+                    <button key={id} onClick={() => setMounting(id)} className={`rounded-xl border px-2 py-2.5 text-center transition flex flex-col items-center gap-1 ${mounting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
+                      <MountIcon id={id} />
+                      <span className="block text-[11px] font-semibold leading-tight">{MOUNTING_LABELS[id]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -526,23 +601,25 @@ export default function QuoteBuilder() {
                 </span>
               </div>
               <div className="h-[min(62vh,560px)] min-h-[420px]">
-                {traits && (
-                  <SignScene
-                    ref={sceneRef}
-                    widthFt={dimW}
-                    heightFt={dimH}
-                    shape={shape}
-                    variant={variant}
-                    lit={isLightbox || lighting === "with"}
-                    preview={isLightbox ? "lightbox" : "panaflex"}
-                    traits={traits}
-                    text="Your Logo"
-                    logoUrl={activeLogo}
-                    showDimensions
-                    faceLabel={faceLabel}
-                    printingLabel={printingLabel || undefined}
-                  />
-                )}
+                <SignScene
+                  ref={sceneRef}
+                  widthFt={dimW}
+                  heightFt={dimH}
+                  shape={shape}
+                  variant={variant}
+                  service={serviceId}
+                  doubleSided={sides === "double"}
+                  lit={lit}
+                  preview={isLightbox ? "lightbox" : "panaflex"}
+                  traits={traits}
+                  text="Your Logo"
+                  logoUrl={activeLogo}
+                  showDimensions
+                  faceLabel={faceLabel}
+                  sidesLabel={sidesLabel}
+                  mountLabel={MOUNTING_LABELS[mounting]}
+                  printingLabel={printingLabel || undefined}
+                />
               </div>
             </div>
             <p className="text-xs text-fog text-center px-2">
