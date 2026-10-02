@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
@@ -29,37 +29,103 @@ import {
 import { site } from "@/lib/site";
 
 type Tab = "landing" | "quote" | "catalog";
-
-const input =
-  "w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-white placeholder:text-fog/50 focus:border-teal outline-none";
+const input = "w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-white placeholder:text-fog/50 focus:border-teal outline-none";
 const label = "block text-xs font-semibold tracking-wider uppercase text-fog mb-1.5";
+
+async function fileAsDataUrl(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageFileToOptimizedPng(file: File): Promise<{ png: string; tiff: string }> {
+  const source = await fileAsDataUrl(file);
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("The selected file is not a readable image."));
+    img.src = source;
+  });
+
+  const maxW = 1600;
+  const maxH = 600;
+  const scale = Math.min(1, maxW / image.naturalWidth, maxH / image.naturalHeight);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas is unavailable in this browser.");
+  ctx.drawImage(image, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  const png = canvas.toDataURL("image/png");
+
+  // Small, dependency-free uncompressed RGB TIFF encoder. The browser still renders the PNG,
+  // while Supabase keeps the TIFF copy as the saved master/archive requested in Builder Settings.
+  const entries = 10;
+  const ifdStart = 8;
+  const ifdSize = 2 + entries * 12 + 4;
+  const bitsOffset = ifdStart + ifdSize;
+  const xResOffset = bitsOffset + 6;
+  const yResOffset = xResOffset + 8;
+  const pixelOffset = yResOffset + 8;
+  const pixelBytes = width * height * 3;
+  const out = new ArrayBuffer(pixelOffset + pixelBytes);
+  const view = new DataView(out);
+  const bytes = new Uint8Array(out);
+  bytes[0] = 0x49; bytes[1] = 0x49; // II / little endian
+  view.setUint16(2, 42, true);
+  view.setUint32(4, ifdStart, true);
+  view.setUint16(ifdStart, entries, true);
+  let e = ifdStart + 2;
+  const tag = (id: number, type: number, count: number, value: number) => {
+    view.setUint16(e, id, true); view.setUint16(e + 2, type, true); view.setUint32(e + 4, count, true);
+    if (type === 3 && count === 1) view.setUint16(e + 8, value, true); else view.setUint32(e + 8, value, true);
+    e += 12;
+  };
+  tag(256, 4, 1, width); tag(257, 4, 1, height); tag(258, 3, 3, bitsOffset);
+  tag(259, 3, 1, 1); tag(262, 3, 1, 2); tag(273, 4, 1, pixelOffset);
+  tag(277, 3, 1, 3); tag(278, 4, 1, height); tag(279, 4, 1, pixelBytes); tag(296, 3, 1, 2);
+  view.setUint32(ifdStart + 2 + entries * 12, 0, true);
+  view.setUint16(bitsOffset, 8, true); view.setUint16(bitsOffset + 2, 8, true); view.setUint16(bitsOffset + 4, 8, true);
+  view.setUint32(xResOffset, 72, true); view.setUint32(xResOffset + 4, 1, true);
+  view.setUint32(yResOffset, 72, true); view.setUint32(yResOffset + 4, 1, true);
+  let px = pixelOffset;
+  for (let i = 0; i < pixels.length; i += 4) { bytes[px++] = pixels[i]; bytes[px++] = pixels[i + 1]; bytes[px++] = pixels[i + 2]; }
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+  return { png, tiff: `data:image/tiff;base64,${btoa(binary)}` };
+}
 
 export default function BuilderSettings() {
   const [tab, setTab] = useState<Tab>("landing");
   const [landing, setLanding] = useState<LandingSettings>(DEFAULT_LANDING);
   const [quote, setQuote] = useState<QuoteSettings>(DEFAULT_QUOTE_SETTINGS);
   const setPricing = (patch: Partial<QuoteSettings["pricing"]>) => setQuote((q) => ({ ...q, pricing: { ...q.pricing, ...patch } }));
-  const setRate = (group: "materials" | "lightbox", id: string, key: "without" | "with", value: number) =>
-    setQuote((q) => ({ ...q, pricing: { ...q.pricing, [group]: { ...q.pricing[group], [id]: { ...q.pricing[group][id], [key]: value } } } }));
+  const setRate = (group: "materials" | "lightbox", id: string, key: "without" | "with", value: number) => setQuote((q) => ({ ...q, pricing: { ...q.pricing, [group]: { ...q.pricing[group], [id]: { ...q.pricing[group][id], [key]: value } } } }));
   const [catalog, setCatalog] = useState<SignType[]>(DEFAULT_SIGN_TYPES);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState("");
+  const [teamFile, setTeamFile] = useState<File | null>(null);
+  const [teamPreview, setTeamPreview] = useState("");
 
   useEffect(() => {
     async function load() {
       const sb = createClient();
-      if (!sb) {
-        setLoading(false);
-        return;
-      }
+      if (!sb) { setLoading(false); return; }
       const { data } = await sb.from("site_settings").select("key,value").in("key", ["landing", "quote", "catalog"]);
-      if (data) {
-        for (const row of data) {
-          if (row.key === "landing") setLanding(mergeLanding(row.value));
-          if (row.key === "quote") setQuote(mergeQuoteSettings(row.value));
-          if (row.key === "catalog") setCatalog(mergeCatalog(row.value));
-        }
+      if (data) for (const row of data) {
+        if (row.key === "landing") { const merged = mergeLanding(row.value); setLanding(merged); setLogoPreview(merged.branding.logoUrl); setTeamPreview(merged.branding.teamImage); }
+        if (row.key === "quote") setQuote(mergeQuoteSettings(row.value));
+        if (row.key === "catalog") setCatalog(mergeCatalog(row.value));
       }
       setLoading(false);
     }
@@ -67,246 +133,121 @@ export default function BuilderSettings() {
   }, []);
 
   async function save(key: string, value: unknown) {
-    setSaving(true);
-    setStatus("");
+    setSaving(true); setStatus("");
     const sb = createClient();
-    if (!sb) {
-      setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local");
-      setSaving(false);
-      return;
-    }
+    if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); return; }
     const { error } = await sb.from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
     setStatus(error ? `Error: ${error.message}` : `Saved "${key}" ✓`);
-    setSaving(false);
-    setTimeout(() => setStatus(""), 3000);
+    setSaving(false); setTimeout(() => setStatus(""), 3000);
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-ink flex items-center justify-center text-fog">
-        Loading settings…
-      </div>
-    );
+  async function saveLanding() {
+    setSaving(true); setStatus("");
+    try {
+      let next = landing;
+      if (logoFile) {
+        const converted = await imageFileToOptimizedPng(logoFile);
+        next = { ...next, branding: { ...next.branding, logoUrl: converted.png, logoTiffData: converted.tiff } };
+      }
+      if (teamFile) {
+        const team = await imageFileToOptimizedPng(teamFile);
+        next = { ...next, branding: { ...next.branding, teamImage: team.png } };
+      }
+      setLanding(next); setLogoPreview(next.branding.logoUrl); setTeamPreview(next.branding.teamImage); setLogoFile(null); setTeamFile(null);
+      const sb = createClient();
+      if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); return; }
+      const { error } = await sb.from("site_settings").upsert({ key: "landing", value: next, updated_at: new Date().toISOString() });
+      setStatus(error ? `Error: ${error.message}` : "Landing page saved ✓ Logo converted to TIFF archive.");
+    } catch (e) {
+      setStatus(`Error: ${e instanceof Error ? e.message : "Unable to save landing page"}`);
+    }
+    setSaving(false); setTimeout(() => setStatus(""), 4000);
   }
+
+  function handleLogo(e: ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) { setLogoFile(f); setLogoPreview(URL.createObjectURL(f)); } }
+  function handleTeam(e: ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) { setTeamFile(f); setTeamPreview(URL.createObjectURL(f)); } }
+
+  if (loading) return <div className="min-h-screen bg-ink flex items-center justify-center text-fog">Loading settings…</div>;
 
   return (
     <div className="min-h-screen bg-ink text-white">
       <header className="sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
         <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-8 w-auto" />
-            </Link>
-            <span className="font-display font-bold text-sm">
-              Builder Settings <span className="text-fog font-normal">· {site.name}</span>
-            </span>
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/"><Image src="/dwlogo.png" alt="Delight Works" width={1016} height={240} className="h-8 w-auto max-w-[180px] object-contain" /></Link>
+            <span className="hidden sm:block font-display font-bold text-sm truncate">Builder Settings <span className="text-fog font-normal">· {site.name}</span></span>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link href="/quotebuilder" className="text-fog hover:text-gold transition">Quote Builder</Link>
-            <Link href="/" className="text-fog hover:text-gold transition">Landing</Link>
-          </div>
+          <div className="flex items-center gap-3 text-sm"><Link href="/quotebuilder" className="text-fog hover:text-gold transition">Quote Builder</Link><Link href="/" className="text-fog hover:text-gold transition">Landing</Link></div>
         </div>
-        {status && (
-          <div className={`text-center text-sm py-1.5 ${status.startsWith("Error") ? "bg-red-900/40 text-red-300" : "bg-teal/20 text-teal"}`}>
-            {status}
-          </div>
-        )}
+        {status && <div className={`text-center text-sm py-1.5 ${status.startsWith("Error") ? "bg-red-900/40 text-red-300" : "bg-teal/20 text-teal"}`}>{status}</div>}
       </header>
 
       <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="flex gap-2 mb-8">
-          {([
-            ["landing", "Landing Page"],
-            ["quote", "Quote Defaults"],
-            ["catalog", "Sign Catalog"],
-          ] as const).map(([id, name]) => (
-            <button key={id} onClick={() => setTab(id)}
-              className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-                tab === id ? "bg-gold text-ink" : "border border-line text-fog hover:border-gold"
-              }`}>
-              {name}
-            </button>
-          ))}
+        <div className="flex gap-2 mb-8 overflow-x-auto pb-1">
+          {([["landing", "Landing Page"], ["quote", "Quote Defaults"], ["catalog", "Sign Catalog"]] as const).map(([id, name]) => <button key={id} onClick={() => setTab(id)} className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition ${tab === id ? "bg-gold text-ink" : "border border-line text-fog hover:border-gold"}`}>{name}</button>)}
         </div>
 
         {tab === "landing" && (
           <div className="space-y-8">
-            <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <h2 className="font-display text-xl font-bold">Hero</h2>
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
+              <div><p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Brand system</p><h2 className="font-display text-xl font-bold">Header logo & company name</h2><p className="text-xs text-fog mt-1">The web version is optimized as PNG. When you save a new logo, a TIFF master is generated and stored with the landing settings.</p></div>
+              <div className="grid lg:grid-cols-[1fr_280px] gap-6 items-start">
+                <div className="space-y-4">
+                  <div><label className={label}>Company name beside logo</label><input className={input} value={landing.branding.companyName} onChange={(e) => setLanding({ ...landing, branding: { ...landing.branding, companyName: e.target.value } })} /></div>
+                  <div><label className={label}>Header logo · PNG/JPG</label><input type="file" accept="image/png,image/jpeg" onChange={handleLogo} className="block w-full rounded-lg border border-line bg-ink px-3 py-2 text-sm text-fog file:mr-3 file:rounded-md file:border-0 file:bg-gold file:px-3 file:py-1.5 file:font-semibold file:text-ink" /><p className="text-[11px] text-fog mt-2">Choose your attached DW logo or a replacement. Save Landing Settings to process it.</p></div>
+                </div>
+                <div className="rounded-xl border border-line bg-ink/60 p-4 min-h-28 flex items-center justify-center"><img src={logoPreview || landing.branding.logoUrl} alt="Logo preview" className="max-h-24 w-full object-contain" /></div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-line bg-panel p-6 space-y-5">
+              <div><p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Hero</p><h2 className="font-display text-xl font-bold">Hero copy & team image</h2><p className="text-xs text-fog mt-1">The old floating DW mark has been removed. Use a real team photo here.</p></div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={label}>Eyebrow</label>
-                  <input className={input} value={landing.hero.eyebrow}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, eyebrow: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>CTA label</label>
-                  <input className={input} value={landing.hero.ctaLabel}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, ctaLabel: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>Headline start</label>
-                  <input className={input} value={landing.hero.headline}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, headline: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>Accent word</label>
-                  <input className={input} value={landing.hero.accent}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, accent: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>Headline end</label>
-                  <input className={input} value={landing.hero.headlineEnd}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, headlineEnd: e.target.value } })} />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className={label}>Subtext</label>
-                  <textarea className={`${input} min-h-[80px]`} value={landing.hero.sub}
-                    onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, sub: e.target.value } })} />
-                </div>
+                <div><label className={label}>Eyebrow</label><input className={input} value={landing.hero.eyebrow} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, eyebrow: e.target.value } })} /></div>
+                <div><label className={label}>CTA label</label><input className={input} value={landing.hero.ctaLabel} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, ctaLabel: e.target.value } })} /></div>
+                <div><label className={label}>Headline start</label><input className={input} value={landing.hero.headline} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, headline: e.target.value } })} /></div>
+                <div><label className={label}>Accent word</label><input className={input} value={landing.hero.accent} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, accent: e.target.value } })} /></div>
+                <div><label className={label}>Headline end</label><input className={input} value={landing.hero.headlineEnd} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, headlineEnd: e.target.value } })} /></div>
+                <div className="sm:col-span-2"><label className={label}>Subtext</label><textarea className={`${input} min-h-[80px]`} value={landing.hero.sub} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, sub: e.target.value } })} /></div>
+              </div>
+              <div className="grid lg:grid-cols-[1fr_280px] gap-6 items-start border-t border-line pt-5">
+                <div><label className={label}>Team photo · PNG/JPG</label><input type="file" accept="image/png,image/jpeg" onChange={handleTeam} className="block w-full rounded-lg border border-line bg-ink px-3 py-2 text-sm text-fog file:mr-3 file:rounded-md file:border-0 file:bg-teal file:px-3 file:py-1.5 file:font-semibold file:text-ink" /><p className="text-[11px] text-fog mt-2">You can also leave this blank and paste an image URL in the field below.</p><input className={`${input} mt-3`} placeholder="Or paste team image URL" value={landing.branding.teamImage} onChange={(e) => setLanding({ ...landing, branding: { ...landing.branding, teamImage: e.target.value } })} /></div>
+                <div className="rounded-xl border border-line bg-ink/60 overflow-hidden aspect-[4/3] flex items-center justify-center">{teamPreview || landing.branding.teamImage ? <img src={teamPreview || landing.branding.teamImage} alt="Team preview" className="h-full w-full object-cover" /> : <span className="text-xs text-fog">Team photo preview</span>}</div>
               </div>
             </section>
 
-            <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <h2 className="font-display text-xl font-bold">Marquee items</h2>
-              <p className="text-xs text-fog">Comma-separated</p>
-              <input className={input} value={landing.marquee.join(", ")}
-                onChange={(e) =>
-                  setLanding({
-                    ...landing,
-                    marquee: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                  })
-                } />
+            <section className="rounded-2xl border border-line bg-panel p-6 space-y-5">
+              <h2 className="font-display text-xl font-bold">Marquee items</h2><p className="text-xs text-fog">Comma-separated</p>
+              <input className={input} value={landing.marquee.join(", ")} onChange={(e) => setLanding({ ...landing, marquee: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+            </section>
+
+            <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-6">
+              <div><p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Visual sections</p><h2 className="font-display text-xl font-bold">Background images</h2><p className="text-xs text-fog mt-1">Paste image URLs. These are stored in Supabase with the rest of your landing settings, so you do not need to put them in the root of GitHub.</p></div>
+              <div><label className={label}>What we do · section background</label><input className={input} value={landing.sectionBackgrounds.whatWeDo} onChange={(e) => setLanding({ ...landing, sectionBackgrounds: { ...landing.sectionBackgrounds, whatWeDo: e.target.value } })} /></div>
+              {landing.services.map((s, i) => <div key={i} className="grid lg:grid-cols-[180px_1fr] gap-4 border-t border-line pt-4"><div><label className={label}>Service</label><div className="rounded-lg border border-line bg-ink px-3 py-2 text-sm font-semibold">{s.title}</div></div><div><label className={label}>Background image URL</label><input className={input} value={s.background} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, background: e.target.value }; setLanding({ ...landing, services }); }} /></div></div>)}
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="font-display text-xl font-bold">Services</h2>
-                <button className="text-sm text-teal hover:underline"
-                  onClick={() =>
-                    setLanding({
-                      ...landing,
-                      services: [...landing.services, { title: "New service", desc: "", icon: "◆" }],
-                    })
-                  }>
-                  + Add
-                </button>
-              </div>
-              {landing.services.map((s, i) => (
-                <div key={i} className="grid sm:grid-cols-[60px_1fr_1fr_auto] gap-3 items-start border-t border-line pt-4">
-                  <div>
-                    <label className={label}>Icon</label>
-                    <input className={input} value={s.icon} onChange={(e) => {
-                      const services = [...landing.services];
-                      services[i] = { ...s, icon: e.target.value };
-                      setLanding({ ...landing, services });
-                    }} />
-                  </div>
-                  <div>
-                    <label className={label}>Title</label>
-                    <input className={input} value={s.title} onChange={(e) => {
-                      const services = [...landing.services];
-                      services[i] = { ...s, title: e.target.value };
-                      setLanding({ ...landing, services });
-                    }} />
-                  </div>
-                  <div>
-                    <label className={label}>Description</label>
-                    <input className={input} value={s.desc} onChange={(e) => {
-                      const services = [...landing.services];
-                      services[i] = { ...s, desc: e.target.value };
-                      setLanding({ ...landing, services });
-                    }} />
-                  </div>
-                  <button className="text-red-400 text-sm mt-6"
-                    onClick={() => setLanding({ ...landing, services: landing.services.filter((_, j) => j !== i) })}>
-                    Remove
-                  </button>
-                </div>
-              ))}
+              <div className="flex justify-between items-center"><div><h2 className="font-display text-xl font-bold">Services</h2><p className="text-xs text-fog mt-1">Each service now supports its own background image.</p></div><button className="text-sm text-teal hover:underline" onClick={() => setLanding({ ...landing, services: [...landing.services, { title: "New service", desc: "", icon: "◆", background: "" }] })}>+ Add</button></div>
+              {landing.services.map((s, i) => <div key={i} className="grid lg:grid-cols-[60px_1fr_1fr_auto] gap-3 items-start border-t border-line pt-4"><div><label className={label}>Icon</label><input className={input} value={s.icon} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, icon: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Title</label><input className={input} value={s.title} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, title: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Description</label><input className={input} value={s.desc} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, desc: e.target.value }; setLanding({ ...landing, services }); }} /></div><button className="text-red-400 text-sm mt-6" onClick={() => setLanding({ ...landing, services: landing.services.filter((_, j) => j !== i) })}>Remove</button></div>)}
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="font-display text-xl font-bold">Projects / Work</h2>
-                <button className="text-sm text-teal hover:underline"
-                  onClick={() =>
-                    setLanding({
-                      ...landing,
-                      projects: [...landing.projects, { title: "New project", tag: "", image: "" }],
-                    })
-                  }>
-                  + Add
-                </button>
-              </div>
-              {landing.projects.map((p, i) => (
-                <div key={i} className="grid sm:grid-cols-3 gap-3 border-t border-line pt-4">
-                  <div>
-                    <label className={label}>Title</label>
-                    <input className={input} value={p.title} onChange={(e) => {
-                      const projects = [...landing.projects];
-                      projects[i] = { ...p, title: e.target.value };
-                      setLanding({ ...landing, projects });
-                    }} />
-                  </div>
-                  <div>
-                    <label className={label}>Tag</label>
-                    <input className={input} value={p.tag} onChange={(e) => {
-                      const projects = [...landing.projects];
-                      projects[i] = { ...p, tag: e.target.value };
-                      setLanding({ ...landing, projects });
-                    }} />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <label className={label}>Image URL</label>
-                      <input className={input} value={p.image} onChange={(e) => {
-                        const projects = [...landing.projects];
-                        projects[i] = { ...p, image: e.target.value };
-                        setLanding({ ...landing, projects });
-                      }} />
-                    </div>
-                    <button className="text-red-400 text-sm self-end mb-2"
-                      onClick={() => setLanding({ ...landing, projects: landing.projects.filter((_, j) => j !== i) })}>
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <div className="flex justify-between items-center"><div><h2 className="font-display text-xl font-bold">Projects / Work</h2><p className="text-xs text-fog mt-1">The URL is stored inside <code className="text-teal">site_settings → landing → projects[].url</code>. It does not need to be placed in the GitHub root.</p></div><button className="text-sm text-teal hover:underline" onClick={() => setLanding({ ...landing, projects: [...landing.projects, { title: "New project", tag: "", image: "", url: "" }] })}>+ Add</button></div>
+              {landing.projects.map((p, i) => <div key={i} className="grid lg:grid-cols-[1fr_1fr_1.5fr_1.5fr_auto] gap-3 border-t border-line pt-4"><div><label className={label}>Title</label><input className={input} value={p.title} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, title: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Tag</label><input className={input} value={p.tag} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, tag: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Image URL</label><input className={input} value={p.image} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, image: e.target.value }; setLanding({ ...landing, projects }); }} /></div><div><label className={label}>Project URL</label><input className={input} placeholder="https://..." value={p.url} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, url: e.target.value }; setLanding({ ...landing, projects }); }} /></div><button className="text-red-400 text-sm self-end mb-2" onClick={() => setLanding({ ...landing, projects: landing.projects.filter((_, j) => j !== i) })}>✕</button></div>)}
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
               <h2 className="font-display text-xl font-bold">Contact & Links</h2>
               <div className="grid sm:grid-cols-2 gap-4">
-                {(["phone", "email", "address", "hours"] as const).map((k) => (
-                  <div key={k}>
-                    <label className={label}>{k}</label>
-                    <input className={input} value={landing.contact[k]}
-                      onChange={(e) => setLanding({ ...landing, contact: { ...landing.contact, [k]: e.target.value } })} />
-                  </div>
-                ))}
-                <div>
-                  <label className={label}>Quote / CTA URL</label>
-                  <input className={input} value={landing.links.quoteUrl}
-                    onChange={(e) => setLanding({ ...landing, links: { ...landing.links, quoteUrl: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>Facebook</label>
-                  <input className={input} value={landing.links.facebook}
-                    onChange={(e) => setLanding({ ...landing, links: { ...landing.links, facebook: e.target.value } })} />
-                </div>
-                <div>
-                  <label className={label}>Instagram (optional)</label>
-                  <input className={input} value={landing.links.instagram}
-                    onChange={(e) => setLanding({ ...landing, links: { ...landing.links, instagram: e.target.value } })} />
-                </div>
+                {(["phone", "email", "address", "hours"] as const).map((k) => <div key={k}><label className={label}>{k}</label><input className={input} value={landing.contact[k]} onChange={(e) => setLanding({ ...landing, contact: { ...landing.contact, [k]: e.target.value } })} /></div>)}
+                <div><label className={label}>Quote / CTA URL</label><input className={input} value={landing.links.quoteUrl} onChange={(e) => setLanding({ ...landing, links: { ...landing.links, quoteUrl: e.target.value } })} /></div>
+                <div><label className={label}>Facebook</label><input className={input} value={landing.links.facebook} onChange={(e) => setLanding({ ...landing, links: { ...landing.links, facebook: e.target.value } })} /></div>
+                <div><label className={label}>Instagram (optional)</label><input className={input} value={landing.links.instagram} onChange={(e) => setLanding({ ...landing, links: { ...landing.links, instagram: e.target.value } })} /></div>
               </div>
             </section>
 
-            <button disabled={saving} onClick={() => save("landing", landing)}
-              className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
-              {saving ? "Saving…" : "Save Landing Settings"}
-            </button>
+            <button disabled={saving} onClick={saveLanding} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">{saving ? "Saving…" : "Save Landing Settings"}</button>
           </div>
         )}
 

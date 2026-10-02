@@ -70,3 +70,6 @@ Starter rates are seeded in the schema. Edit anytime at **/buildersettings → Q
 ## Stack
 
 Next.js 15 · Tailwind 4 · React Three Fiber · Supabase · html-to-image
+
+## Landing page visual settings
+Landing-page branding, hero/team image, service backgrounds, project image URLs, and project links are stored in the Supabase `site_settings` row with `key = landing`. Uploaded header logos are optimized for web display and a TIFF master is stored in `branding.logoTiffData`.

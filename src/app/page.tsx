@@ -12,18 +12,9 @@ export const revalidate = 30;
 
 export default async function Home() {
   const s = await fetchLandingSettings();
-  return (
-    <>
-      <Navbar quoteUrl={s.links.quoteUrl} ctaLabel={s.hero.ctaLabel} />
-      <main>
-        <Hero hero={s.hero} links={s.links} />
-        <Marquee items={s.marquee} />
-        <Services services={s.services} />
-        <Work projects={s.projects} />
-        <Process />
-        <Contact contact={s.contact} links={s.links} />
-      </main>
-      <Footer links={s.links} />
-    </>
-  );
+  return <>
+    <Navbar quoteUrl={s.links.quoteUrl} ctaLabel={s.hero.ctaLabel} branding={s.branding} />
+    <main><Hero hero={s.hero} links={s.links} branding={s.branding} /><Marquee items={s.marquee} /><Services services={s.services} background={s.sectionBackgrounds.whatWeDo} /><Work projects={s.projects} /><Process /><Contact contact={s.contact} links={s.links} /></main>
+    <Footer links={s.links} />
+  </>;
 }
