@@ -33,8 +33,17 @@ interface SignSceneProps {
   printingLabel?: string;
   shape?: SignShape;
   variant?: SceneVariant;
-  /** Lightboxes are always internally lit */
+  /** Lightboxes and neon are always internally lit */
   lit?: boolean;
+  /** Service id: panaflex | lightbox | acrylic | neon | apc | tarp | sticker | metal | custom */
+  service?: string;
+  /** Double-faced sign: artwork is repeated on the back */
+  doubleSided?: boolean;
+  /** Short chip labels shown over the 3D view */
+  sidesLabel?: string;
+  mountLabel?: string;
+  /** Extra height under the sign (pole / rooftop supports) — computed by SignScene */
+  below?: number;
 }
 
 function fmtFt(n: number) {
@@ -165,155 +174,259 @@ function BulbIcon({ x, y, z }: { x: number; y: number; z: number }) {
   );
 }
 
-function PanaflexMesh({
-  widthFt,
-  heightFt,
-  traits,
-  logoUrl,
-  showDimensions = true,
-  faceLabel,
-}: SignSceneProps) {
+
+type Look = { color: string; metalness: number; roughness: number };
+function lookOf(service?: string): Look {
+  switch (service) {
+    case "apc": return { color: "#d8dde2", metalness: 0.15, roughness: 0.5 };
+    case "metal": return { color: "#aeb7bf", metalness: 0.4, roughness: 0.45 };
+    case "acrylic": return { color: "#f5fbff", metalness: 0.05, roughness: 0.15 };
+    case "tarp": return { color: "#fbfbf8", metalness: 0, roughness: 0.9 };
+    case "sticker": return { color: "#ffffff", metalness: 0, roughness: 0.35 };
+    case "custom": return { color: "#eef0f2", metalness: 0.02, roughness: 0.7 };
+    case "neon": return { color: "#14181d", metalness: 0.1, roughness: 0.5 };
+    default: return { color: "#ffffff", metalness: 0.02, roughness: 0.7 };
+  }
+}
+
+type V3 = [number, number, number];
+const STEEL = "#7b848d";
+const WALL = "#e4e9ee";
+
+/** Cylindrical steel bar between two points. */
+function Strut({ a, b, r = 0.04, color = STEEL }: { a: V3; b: V3; r?: number; color?: string }) {
+  const va = new THREE.Vector3(...a);
+  const vb = new THREE.Vector3(...b);
+  const dir = vb.clone().sub(va);
+  const len = dir.length() || 0.001;
+  const mid = va.clone().add(vb).multiplyScalar(0.5);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  return (
+    <mesh position={[mid.x, mid.y, mid.z]} quaternion={q}>
+      <cylinderGeometry args={[r, r, len, 14]} />
+      <meshStandardMaterial color={color} metalness={0.6} roughness={0.35} />
+    </mesh>
+  );
+}
+
+function Plate({ pos, size, color = STEEL }: { pos: V3; size: V3; color?: string }) {
+  return (
+    <mesh position={pos}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={color} metalness={0.6} roughness={0.35} />
+    </mesh>
+  );
+}
+
+/** Extra height needed under the sign for freestanding mounts. */
+function belowFor(mount: Traits["mount"], h: number) {
+  if (mount === "pole") return Math.min(5, Math.max(1.8, h * 0.9));
+  if (mount === "rooftop") return 1.4;
+  return 0;
+}
+
+/** Real, visible mounting hardware: wall slab, wall brackets, pole(s) or rooftop steel supports. */
+function Mounting({ mount, w, h, depth, below }: { mount: Traits["mount"]; w: number; h: number; depth: number; below: number }) {
+  const back = -depth / 2;
+  const bigW = Math.max(w, 2) * 4;
+  const bigH = Math.max(h, 2) * 4;
+  const bottom = -h / 2;
+
+  if (mount === "wall") {
+    // Flush against the wall
+    return (
+      <mesh position={[0, 0, back - 0.004 - 0.15]}>
+        <boxGeometry args={[bigW, bigH, 0.3]} />
+        <meshStandardMaterial color={WALL} roughness={0.95} />
+      </mesh>
+    );
+  }
+
+  if (mount === "bracket") {
+    const standoff = 0.5;
+    const wallFront = back - standoff;
+    const xs = w >= 3 ? [-w * 0.32, w * 0.32] : [0];
+    const ys = h >= 3.5 ? [-h * 0.28, h * 0.28] : [0];
+    return (
+      <group>
+        <mesh position={[0, 0, wallFront - 0.15]}>
+          <boxGeometry args={[bigW, bigH, 0.3]} />
+          <meshStandardMaterial color={WALL} roughness={0.95} />
+        </mesh>
+        {xs.flatMap((x) =>
+          ys.map((y) => (
+            <group key={`${x}_${y}`}>
+              <Strut a={[x, y, back]} b={[x, y, wallFront]} r={0.045} />
+              <Plate pos={[x, y, wallFront + 0.02]} size={[0.3, 0.3, 0.04]} />
+              <Plate pos={[x, y, back - 0.02]} size={[0.26, 0.26, 0.04]} />
+              <Strut a={[x, y - 0.32, wallFront + 0.02]} b={[x, y, back - 0.14]} r={0.03} />
+            </group>
+          )),
+        )}
+      </group>
+    );
+  }
+
+  if (mount === "pole") {
+    const xs = w > 6 ? [-w * 0.3, w * 0.3] : [0];
+    const pz = back - 0.12;
+    const groundY = bottom - below;
+    return (
+      <group>
+        {xs.map((x) => (
+          <group key={x}>
+            <Strut a={[x, groundY, pz]} b={[x, bottom + h * 0.7, pz]} r={0.11} />
+            <Plate pos={[x, groundY + 0.03, pz]} size={[0.9, 0.06, 0.9]} />
+          </group>
+        ))}
+        <mesh position={[0, groundY - 0.015, pz]}>
+          <boxGeometry args={[Math.max(w, 2) * 2.2, 0.03, 2.4]} />
+          <meshStandardMaterial color="#cfd5db" roughness={1} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (mount === "rooftop") {
+    const roofY = bottom - below;
+    const xs = [-Math.max(w * 0.38, 0.6), Math.max(w * 0.38, 0.6)];
+    const pz = back - 0.1;
+    return (
+      <group>
+        <mesh position={[0, roofY - 0.1, back - 1.0]}>
+          <boxGeometry args={[Math.max(w, 2) * 2, 0.2, 3]} />
+          <meshStandardMaterial color="#b9c1c9" roughness={1} />
+        </mesh>
+        {xs.map((x) => (
+          <group key={x}>
+            <Strut a={[x, roofY, pz]} b={[x, bottom + h * 0.55, pz]} r={0.06} />
+            <Strut a={[x, roofY, back - 2.0]} b={[x, bottom + h * 0.5, pz]} r={0.045} />
+            <Plate pos={[x, roofY + 0.02, pz]} size={[0.5, 0.04, 0.5]} />
+            <Plate pos={[x, roofY + 0.02, back - 2.0]} size={[0.4, 0.04, 0.4]} />
+          </group>
+        ))}
+      </group>
+    );
+  }
+
+  return null;
+}
+
+/** Logo image, or the placeholder text, on the +Z face. */
+function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outline, maxWidth }: {
+  w: number; h: number; depth: number; logoUrl?: string; circle?: boolean; fontSize: number; color: string; outline: string; maxWidth: number;
+}) {
+  if (logoUrl) {
+    return (
+      <Suspense fallback={null}>
+        <LogoFace w={w} h={h} depth={depth} logoUrl={logoUrl} circle={circle} />
+      </Suspense>
+    );
+  }
+  return (
+    <Text
+      position={[0, 0, depth / 2 + 0.012]}
+      fontSize={fontSize}
+      maxWidth={maxWidth}
+      anchorX="center"
+      anchorY="middle"
+      textAlign="center"
+      color={color}
+      outlineWidth={0.008}
+      outlineColor={outline}
+    >
+      Your Logo
+    </Text>
+  );
+}
+
+function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0 }: SignSceneProps) {
   const w = Math.max(0.5, widthFt);
   const h = Math.max(0.3, heightFt);
-  const depth = Math.max(0.04, traits.frameThickness || 0.12);
-  const withLight = traits.light !== "none";
-  const faceColor =
-    faceLabel === "APC"
-      ? "#d8dde2"
-      : faceLabel === "Metal Sheet"
-        ? "#aeb7bf"
-        : faceLabel === "Acrylic"
-          ? "#f5fbff"
-          : "#ffffff";
-
-  // Scale dim offset & font with sign size so labels stay readable
+  const depth = Math.max(0.02, traits.frameThickness || 0.12);
+  const withLight = lit ?? traits.light !== "none";
+  const look = lookOf(service);
+  const isNeon = service === "neon";
+  const isLightbox = service === "lightbox";
+  const inset = isLightbox ? Math.min(0.08, Math.min(w, h) * 0.08) : 0;
+  const aw = w - inset * 2;
+  const ah = h - inset * 2;
   const dimOff = Math.max(0.55, Math.min(w, h) * 0.18);
   const dimFont = Math.max(0.28, Math.min(w, h) * 0.1);
 
-  return (
-    <group>
-      <mesh position={[0, 0, -depth - 0.12]}>
-        <planeGeometry args={[Math.max(w, 2) * 4, Math.max(h, 2) * 4]} />
-        <meshBasicMaterial color="#f0f3f6" />
-      </mesh>
-
-      <RoundedBox args={[w, h, depth]} radius={0.008} castShadow receiveShadow>
-        <meshStandardMaterial
-          color={faceColor}
-          roughness={0.7}
-          metalness={faceLabel === "Metal Sheet" ? 0.4 : 0.02}
-        />
-      </RoundedBox>
-
-      {logoUrl ? (
-        <Suspense fallback={null}>
-          <LogoFace w={w} h={h} depth={depth} logoUrl={logoUrl} />
-        </Suspense>
-      ) : (
-        <Text
-          position={[0, 0, depth / 2 + 0.012]}
-          fontSize={Math.min(w * 0.14, h * 0.28)}
-          maxWidth={w * 0.9}
-          anchorX="center"
-          anchorY="middle"
-          textAlign="center"
-          color="#222222"
-          outlineWidth={0.008}
-          outlineColor="#ffffff"
-        >
-          Your Logo
-        </Text>
+  const decor = (
+    <>
+      {isLightbox && (
+        <mesh position={[0, 0, depth / 2 + 0.006]}>
+          <planeGeometry args={[aw, ah]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
       )}
+      <Artwork
+        w={aw} h={ah} depth={depth} logoUrl={logoUrl}
+        fontSize={Math.min(aw * 0.14, ah * 0.28)} maxWidth={aw * 0.9}
+        color={isNeon ? "#ff4fd8" : "#222222"} outline={isNeon ? "#ffd1f5" : "#ffffff"}
+      />
+    </>
+  );
+
+  return (
+    <group position={[0, below / 2, 0]}>
+      <Mounting mount={traits.mount} w={w} h={h} depth={depth} below={below} />
+
+      {isLightbox ? (
+        <RoundedBox args={[w, h, depth]} radius={0.02} castShadow receiveShadow>
+          <meshStandardMaterial
+            color={variant === "acrylic" ? "#e3f4fb" : "#8f99a3"}
+            transparent={variant === "acrylic"}
+            opacity={variant === "acrylic" ? 0.62 : 1}
+            metalness={variant === "acrylic" ? 0.05 : 0.55}
+            roughness={variant === "acrylic" ? 0.12 : 0.4}
+          />
+        </RoundedBox>
+      ) : (
+        <RoundedBox args={[w, h, depth]} radius={0.008} castShadow receiveShadow>
+          <meshStandardMaterial color={look.color} roughness={look.roughness} metalness={look.metalness} />
+        </RoundedBox>
+      )}
+
+      {decor}
+      {doubleSided && <group rotation={[0, Math.PI, 0]}>{decor}</group>}
 
       {withLight && <BulbIcon x={w / 2 + dimOff * 0.7} y={h / 2 + 0.2} z={depth / 2 + 0.05} />}
 
       {showDimensions && (
         <group>
-          {/* Width bottom */}
-          <DimLine
-            start={[-w / 2, -h / 2, depth / 2]}
-            end={[w / 2, -h / 2, depth / 2]}
-            offset={[0, -dimOff, 0.08]}
-            label={`W ${fmtFt(w)}`}
-            color="#000000"
-            fontSize={dimFont}
-          />
-          {/* Width top */}
-          <DimLine
-            start={[-w / 2, h / 2, depth / 2]}
-            end={[w / 2, h / 2, depth / 2]}
-            offset={[0, dimOff, 0.08]}
-            label={`W ${fmtFt(w)}`}
-            color="#000000"
-            fontSize={dimFont}
-          />
-          {/* Height left */}
-          <DimLine
-            start={[-w / 2, -h / 2, depth / 2]}
-            end={[-w / 2, h / 2, depth / 2]}
-            offset={[-dimOff, 0, 0.08]}
-            label={`H ${fmtFt(h)}`}
-            color="#000000"
-            fontSize={dimFont}
-          />
-          {/* Height right */}
-          <DimLine
-            start={[w / 2, -h / 2, depth / 2]}
-            end={[w / 2, h / 2, depth / 2]}
-            offset={[dimOff, 0, 0.08]}
-            label={`H ${fmtFt(h)}`}
-            color="#000000"
-            fontSize={dimFont}
-          />
-          {/* Thickness */}
-          <DimLine
-            start={[w / 2, -h / 2, -depth / 2]}
-            end={[w / 2, -h / 2, depth / 2]}
-            offset={[dimOff * 0.65, -dimOff * 0.45, 0]}
-            label={`T ${Math.round(depth * 12 * 10) / 10}"`}
-            color="#000000"
-            fontSize={dimFont * 0.9}
-          />
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -dimOff, 0.08]} label={`W ${fmtFt(w)}`} color="#000000" fontSize={dimFont} />
+          <DimLine start={[-w / 2, h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[0, dimOff, 0.08]} label={`W ${fmtFt(w)}`} color="#000000" fontSize={dimFont} />
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-dimOff, 0, 0.08]} label={`H ${fmtFt(h)}`} color="#000000" fontSize={dimFont} />
+          <DimLine start={[w / 2, -h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[dimOff, 0, 0.08]} label={`H ${fmtFt(h)}`} color="#000000" fontSize={dimFont} />
+          <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[dimOff * 0.65, -dimOff * 0.45, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#000000" fontSize={dimFont * 0.9} />
         </group>
       )}
     </group>
   );
 }
 
-
-function DiscMesh({
-  widthFt,
-  traits,
-  logoUrl,
-  showDimensions = true,
-  faceLabel,
-  variant = "panaflex",
-  lit,
-}: SignSceneProps) {
+function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0 }: SignSceneProps) {
   const d = Math.max(0.5, widthFt);
   const r = d / 2;
-  const depth = Math.max(0.04, traits.frameThickness || 0.12);
+  const depth = Math.max(0.02, traits.frameThickness || 0.12);
   const withLight = lit ?? traits.light !== "none";
   const dimOff = Math.max(0.55, d * 0.18);
   const dimFont = Math.max(0.28, d * 0.1);
   const faceR = r * 0.955;
   const rotX: [number, number, number] = [Math.PI / 2, 0, 0];
-  const faceColor = faceLabel === "APC" ? "#d8dde2" : faceLabel === "Metal Sheet" ? "#aeb7bf" : faceLabel === "Acrylic" ? "#f5fbff" : "#ffffff";
+  const look = lookOf(service);
+  const isNeon = service === "neon";
+  const isLightbox = service === "lightbox";
+  const builtup = isLightbox && variant === "builtup";
+  const acrylicLb = isLightbox && variant === "acrylic";
 
-  return (
-    <group>
-      <mesh position={[0, 0, -depth - 0.12]}>
-        <planeGeometry args={[Math.max(d, 2) * 4, Math.max(d, 2) * 4]} />
-        <meshBasicMaterial color="#f0f3f6" />
-      </mesh>
-
-      {variant === "builtup" && (
+  const decor = (
+    <>
+      {builtup && (
         <>
-          {/* Metal built-up cabinet (returns) */}
-          <mesh rotation={rotX}>
-            <cylinderGeometry args={[r, r, depth, 72]} />
-            <meshStandardMaterial color="#8f99a3" metalness={0.55} roughness={0.4} />
-          </mesh>
           <mesh position={[0, 0, depth / 2 + 0.004]}>
             <ringGeometry args={[faceR, r, 72]} />
             <meshBasicMaterial color="#5f6a75" />
@@ -324,14 +437,8 @@ function DiscMesh({
           </mesh>
         </>
       )}
-
-      {variant === "acrylic" && (
+      {acrylicLb && (
         <>
-          {/* Clear / milky acrylic body */}
-          <mesh rotation={rotX}>
-            <cylinderGeometry args={[r, r, depth, 72]} />
-            <meshStandardMaterial color="#e3f4fb" transparent opacity={0.62} roughness={0.12} metalness={0.05} />
-          </mesh>
           <mesh position={[0, 0, depth / 2 + 0.004]}>
             <ringGeometry args={[r * 0.985, r, 72]} />
             <meshBasicMaterial color="#8fd3e6" />
@@ -342,35 +449,39 @@ function DiscMesh({
           </mesh>
         </>
       )}
+      <Artwork
+        w={isLightbox ? faceR * 2 : d} h={isLightbox ? faceR * 2 : d} depth={depth} logoUrl={logoUrl} circle
+        fontSize={Math.min(d * 0.16, 0.6)} maxWidth={d * 0.75}
+        color={isNeon ? "#ff4fd8" : "#222222"} outline={isNeon ? "#ffd1f5" : "#ffffff"}
+      />
+    </>
+  );
 
-      {variant === "panaflex" && (
-        <>
-          <mesh rotation={rotX}>
-            <cylinderGeometry args={[r, r, depth, 72]} />
-            <meshStandardMaterial color={faceColor} roughness={0.7} metalness={faceLabel === "Metal Sheet" ? 0.4 : 0.02} />
-          </mesh>
-        </>
+  return (
+    <group position={[0, below / 2, 0]}>
+      <Mounting mount={traits.mount} w={d} h={d} depth={depth} below={below} />
+
+      {builtup && (
+        <mesh rotation={rotX}>
+          <cylinderGeometry args={[r, r, depth, 72]} />
+          <meshStandardMaterial color="#8f99a3" metalness={0.55} roughness={0.4} />
+        </mesh>
+      )}
+      {acrylicLb && (
+        <mesh rotation={rotX}>
+          <cylinderGeometry args={[r, r, depth, 72]} />
+          <meshStandardMaterial color="#e3f4fb" transparent opacity={0.62} roughness={0.12} metalness={0.05} />
+        </mesh>
+      )}
+      {!isLightbox && (
+        <mesh rotation={rotX}>
+          <cylinderGeometry args={[r, r, depth, 72]} />
+          <meshStandardMaterial color={look.color} roughness={look.roughness} metalness={look.metalness} />
+        </mesh>
       )}
 
-      {logoUrl ? (
-        <Suspense fallback={null}>
-          <LogoFace w={variant === "panaflex" ? d : faceR * 2} h={variant === "panaflex" ? d : faceR * 2} depth={depth} logoUrl={logoUrl} circle />
-        </Suspense>
-      ) : (
-        <Text
-          position={[0, 0, depth / 2 + 0.012]}
-          fontSize={Math.min(d * 0.16, 0.6)}
-          maxWidth={d * 0.75}
-          anchorX="center"
-          anchorY="middle"
-          textAlign="center"
-          color="#222222"
-          outlineWidth={0.008}
-          outlineColor="#ffffff"
-        >
-          Your Logo
-        </Text>
-      )}
+      {decor}
+      {doubleSided && <group rotation={[0, Math.PI, 0]}>{decor}</group>}
 
       {withLight && <BulbIcon x={r + dimOff * 0.75} y={r * 0.8} z={depth / 2 + 0.05} />}
 
@@ -378,14 +489,7 @@ function DiscMesh({
         <group>
           <DimLine start={[-r, -r, depth / 2]} end={[r, -r, depth / 2]} offset={[0, -dimOff, 0.08]} label={`Ø ${fmtFt(d)}`} color="#000000" fontSize={dimFont} />
           <DimLine start={[-r, -r, depth / 2]} end={[-r, r, depth / 2]} offset={[-dimOff, 0, 0.08]} label={`Ø ${fmtFt(d)}`} color="#000000" fontSize={dimFont} />
-          <DimLine
-            start={[r, -r, -depth / 2]}
-            end={[r, -r, depth / 2]}
-            offset={[dimOff * 0.65, -dimOff * 0.45, 0]}
-            label={`T ${Math.round(depth * 12 * 10) / 10}"`}
-            color="#000000"
-            fontSize={dimFont * 0.9}
-          />
+          <DimLine start={[r, -r, -depth / 2]} end={[r, -r, depth / 2]} offset={[dimOff * 0.65, -dimOff * 0.45, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#000000" fontSize={dimFont * 0.9} />
         </group>
       )}
     </group>
@@ -430,9 +534,13 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
   return null;
 }
 
+
 const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene(props, ref) {
   const { widthFt, heightFt, shape = "rect" } = props;
-  const maxDim = Math.max(widthFt, heightFt, 1);
+  const hh = shape === "circle" ? widthFt : heightFt;
+  const below = belowFor(props.traits.mount, hh);
+  // Frame the whole composition (sign + pole / rooftop supports), not just the sign
+  const maxDim = Math.max(widthFt, hh + below, 1);
   // Pull camera back enough so big dim labels fit in frame
   const camDist = maxDim * 2.6 + 2.2;
   const apiRef = useRef<CaptureApi | null>(null);
@@ -447,6 +555,7 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
   const thickness = Math.round((props.traits.frameThickness || 0.12) * 12 * 10) / 10;
   const withLight = props.lit ?? props.traits.light !== "none";
   const dimLabel = shape === "circle" ? `Ø ${fmtFt(widthFt)}` : null;
+  const chip = "rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm";
 
   return (
     <div className="w-full h-full min-h-[400px] rounded-xl overflow-hidden bg-[#f0f3f6] border border-line relative">
@@ -459,21 +568,17 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
         <ambientLight intensity={1.15} />
         <directionalLight position={[5, 7, 6]} intensity={0.5} />
         <Suspense fallback={null}>
-          {shape === "circle" ? <DiscMesh {...props} /> : <PanaflexMesh {...props} />}
+          {shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
         </Suspense>
         <CaptureController camDist={camDist} onReady={(api) => { apiRef.current = api; }} />
-        <OrbitControls makeDefault minDistance={1.5} maxDistance={50} target={[0, 0, 0]} enablePan={false} />
+        <OrbitControls makeDefault minDistance={1.5} maxDistance={80} target={[0, 0, 0]} enablePan={false} />
       </Canvas>
 
       <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-2 pointer-events-none">
-        <span className="rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm">
-          {props.faceLabel || "Face"}
-        </span>
-        {props.printingLabel && (
-          <span className="rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm">
-            {props.printingLabel}
-          </span>
-        )}
+        <span className={chip}>{props.faceLabel || "Face"}</span>
+        {props.sidesLabel && <span className={chip}>{props.sidesLabel}</span>}
+        {props.printingLabel && <span className={chip}>{props.printingLabel}</span>}
+        {props.mountLabel && <span className={chip}>{props.mountLabel}</span>}
         <span
           className={`rounded-full px-2.5 py-1 text-[11px] font-bold border shadow-sm ${
             withLight ? "bg-amber-50 border-amber-400 text-black" : "bg-white border-gray-300 text-black"
