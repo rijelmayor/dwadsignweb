@@ -77,20 +77,42 @@ export async function fetchLandingSettings(): Promise<LandingSettings> {
   }
 }
 
-export interface PanaflexPricing {
-  /** Hidden construction/base rate. Still charged per square foot, but not exposed as a customer-facing frame option. */
+/** ₱ per square foot, for the same material with the light off / on. */
+export interface LightRate { without: number; with: number }
+
+/** Material / service types priced with and without light (Lightbox has its own two builds). */
+export const MATERIAL_RATES: [string, string][] = [
+  ["panaflex", "Panaflex"],
+  ["acrylic", "Acrylic"],
+  ["neon", "Neon LED"],
+  ["apc", "APC"],
+  ["tarp", "Tarp"],
+  ["sticker", "Sticker"],
+  ["metal", "Metal Sheet"],
+  ["custom", "Custom"],
+];
+export const LIGHTBOX_RATES: [string, string][] = [
+  ["builtup", "Lightbox · Built-up"],
+  ["acrylic", "Lightbox · Acrylic build"],
+];
+export const PRINTING_RATES: [string, string][] = [
+  ["direct", "Direct to materials"],
+  ["sticker", "Sticker print"],
+  ["cutout", "Sticker Cut Out"],
+  ["uv", "UV Print"],
+];
+
+export interface PricingSettings {
+  /** Hidden internal construction / frame rate, ₱ per sqft (not a customer-facing option). */
   constructionPerSqft: number;
-  face: Record<string, number>;
-  lighting: Record<string, number>;
+  /** Material rate per sqft, without and with light, for every material type. */
+  materials: Record<string, LightRate>;
+  /** Lightbox rate per sqft (builds), without and with light. */
+  lightbox: Record<string, LightRate>;
+  /** Printing add-on, ₱ per sqft. */
   printing: Record<string, number>;
   minimumCharge: number;
-}
-
-/** Lightbox (circle max 3ft diameter) — rates are ₱ per sqft of the face area (circle or rectangle). */
-export interface LightboxRoundPricing {
-  builtUp: number;
-  acrylic: number;
-  minimumCharge: number;
+  lightboxMinimumCharge: number;
 }
 
 export interface QuoteSettings {
@@ -99,35 +121,18 @@ export interface QuoteSettings {
   quotePrefix: string;
   terms: string[];
   preparedByTitle: string;
-  panaflexPricing: PanaflexPricing;
-  lightboxRoundPricing: LightboxRoundPricing;
+  pricing: PricingSettings;
 }
 
-export const DEFAULT_LIGHTBOX_ROUND_PRICING: LightboxRoundPricing = { builtUp: 0, acrylic: 0, minimumCharge: 0 };
+const zeroRate = (): LightRate => ({ without: 0, with: 0 });
 
-export const DEFAULT_PANAFLEX_PRICING: PanaflexPricing = {
+export const DEFAULT_PRICING: PricingSettings = {
   constructionPerSqft: 0,
-  face: {
-    panaflex: 0,
-    tarp: 0,
-    apc: 0,
-    acrylic: 0,
-    metal: 0,
-    custom: 0,
-    neon: 0,
-    sticker: 0,
-  },
-  lighting: {
-    without: 0,
-    with: 0,
-  },
-  printing: {
-    sticker: 0,
-    direct: 0,
-    cutout: 0,
-    uv: 0,
-  },
+  materials: Object.fromEntries(MATERIAL_RATES.map(([id]) => [id, zeroRate()])),
+  lightbox: Object.fromEntries(LIGHTBOX_RATES.map(([id]) => [id, zeroRate()])),
+  printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, 0])),
   minimumCharge: 0,
+  lightboxMinimumCharge: 0,
 };
 
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
@@ -140,41 +145,81 @@ export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
     "Prices are subject to site survey confirmation.",
   ],
   preparedByTitle: "Sales Specialist",
-  panaflexPricing: DEFAULT_PANAFLEX_PRICING,
-  lightboxRoundPricing: DEFAULT_LIGHTBOX_ROUND_PRICING,
+  pricing: DEFAULT_PRICING,
 };
 
 function num(v: unknown, fallback: number) {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
-function mergeNumberMap(raw: unknown, fallback: Record<string, number>) {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  return Object.fromEntries(Object.entries(fallback).map(([key, value]) => [key, num(r[key], value)]));
+function obj(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+function mergeRate(raw: unknown, fallback: LightRate): LightRate {
+  const r = obj(raw);
+  return { without: num(r.without, fallback.without), with: num(r.with, fallback.with) };
+}
+
+/**
+ * Reads the new `pricing` block. Older saved settings (panaflexPricing: face + separate lighting add-on,
+ * lightboxRoundPricing) are converted so existing prices keep the same totals:
+ *   without = face + lighting.without · with = face + lighting.with
+ */
+function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
+  const d = DEFAULT_PRICING;
+  const np = obj(rawQuote.pricing);
+
+  if (Object.keys(np).length > 0) {
+    const mats = obj(np.materials);
+    const lbs = obj(np.lightbox);
+    const printing = obj(np.printing);
+    return {
+      constructionPerSqft: num(np.constructionPerSqft, d.constructionPerSqft),
+      materials: Object.fromEntries(MATERIAL_RATES.map(([id]) => [id, mergeRate(mats[id], d.materials[id])])),
+      lightbox: Object.fromEntries(LIGHTBOX_RATES.map(([id]) => [id, mergeRate(lbs[id], d.lightbox[id])])),
+      printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, num(printing[id], 0)])),
+      minimumCharge: num(np.minimumCharge, d.minimumCharge),
+      lightboxMinimumCharge: num(np.lightboxMinimumCharge, d.lightboxMinimumCharge),
+    };
+  }
+
+  // ---- legacy shape ----
+  const op = obj(rawQuote.panaflexPricing);
+  const olb = obj(rawQuote.lightboxRoundPricing);
+  const face = obj(op.face);
+  const lighting = obj(op.lighting);
+  const printing = obj(op.printing);
+  const lightWithout = num(lighting.without, 0);
+  const lightWith = num(lighting.with, 0);
+  return {
+    constructionPerSqft: num(op.constructionPerSqft, 0),
+    materials: Object.fromEntries(
+      MATERIAL_RATES.map(([id]) => {
+        const f = num(face[id], 0);
+        return [id, { without: f + lightWithout, with: f + lightWith }];
+      }),
+    ),
+    lightbox: {
+      builtup: { without: num(olb.builtUp, 0), with: num(olb.builtUp, 0) },
+      acrylic: { without: num(olb.acrylic, 0), with: num(olb.acrylic, 0) },
+    },
+    printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, num(printing[id], 0)])),
+    minimumCharge: num(op.minimumCharge, 0),
+    lightboxMinimumCharge: num(olb.minimumCharge, 0),
+  };
 }
 
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {
-  const r = (raw ?? {}) as Partial<QuoteSettings> & { panaflexPricing?: Partial<PanaflexPricing>; lightboxRoundPricing?: Partial<LightboxRoundPricing> };
-  const lb: Partial<LightboxRoundPricing> = r.lightboxRoundPricing ?? {};
+  const r = obj(raw);
   const d = DEFAULT_QUOTE_SETTINGS;
-  const p: Partial<PanaflexPricing> = r.panaflexPricing ?? {};
+  const terms = Array.isArray(r.terms) && r.terms.length > 0 ? (r.terms as string[]) : d.terms;
   return {
     markupPct: num(r.markupPct, d.markupPct),
     vatPct: num(r.vatPct, d.vatPct),
-    quotePrefix: r.quotePrefix?.trim() || d.quotePrefix,
-    terms: nonEmptyArray(r.terms, d.terms),
-    preparedByTitle: r.preparedByTitle ?? d.preparedByTitle,
-    panaflexPricing: {
-      constructionPerSqft: num(p.constructionPerSqft, d.panaflexPricing.constructionPerSqft),
-      face: mergeNumberMap(p.face, d.panaflexPricing.face),
-      lighting: mergeNumberMap(p.lighting, d.panaflexPricing.lighting),
-      printing: mergeNumberMap(p.printing, d.panaflexPricing.printing),
-      minimumCharge: num(p.minimumCharge, d.panaflexPricing.minimumCharge),
-    },
-    lightboxRoundPricing: {
-      builtUp: num(lb.builtUp, d.lightboxRoundPricing.builtUp),
-      acrylic: num(lb.acrylic, d.lightboxRoundPricing.acrylic),
-      minimumCharge: num(lb.minimumCharge, d.lightboxRoundPricing.minimumCharge),
-    },
+    quotePrefix: typeof r.quotePrefix === "string" && r.quotePrefix.trim() ? r.quotePrefix.trim() : d.quotePrefix,
+    terms,
+    preparedByTitle: typeof r.preparedByTitle === "string" ? r.preparedByTitle : d.preparedByTitle,
+    pricing: mergePricing(r),
   };
 }
