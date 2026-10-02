@@ -225,7 +225,18 @@ export default function QuoteBuilder() {
       const w = el.offsetWidth;
       const h = el.offsetHeight;
       const { toPng, toJpeg } = await import("html-to-image");
-      const options = { pixelRatio: Math.max(1.5, 1600 / w), backgroundColor: "#ffffff", width: w, height: h, quality: format === "jpeg" ? 0.92 : 1 };
+      // The on-screen sheet is centered with mx-auto (+ shadow). html-to-image copies that computed
+      // margin onto the clone, which shifts the sheet right inside the canvas → white strip on the left
+      // and the right side cut off. Neutralise margin/shadow on the clone so it renders flush at 0,0.
+      const options = {
+        pixelRatio: Math.max(1.5, 1600 / w),
+        backgroundColor: "#ffffff",
+        width: w,
+        height: h,
+        quality: format === "jpeg" ? 0.92 : 1,
+        cacheBust: true,
+        style: { margin: "0", boxShadow: "none", transform: "none", width: `${w}px`, maxWidth: `${w}px` },
+      };
       const dataUrl = format === "png" ? await toPng(el, options) : await toJpeg(el, options);
       const a = document.createElement("a");
       a.href = dataUrl;
