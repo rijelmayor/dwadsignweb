@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_QUOTE_SETTINGS, mergeQuoteSettings, type QuoteSettings } from "@/lib/settings";
 import type { Traits } from "@/lib/traits";
 import { site } from "@/lib/site";
-import type { SignSceneHandle, PolePlacement } from "@/components/SignScene";
+import type { SignSceneHandle } from "@/components/SignScene";
 
 const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false });
 
@@ -82,13 +82,8 @@ const SIDES_OPTIONS: [Sides, string, string][] = [
   ["double", "Double face", "Artwork on both sides (face + printing × 2)"],
 ];
 const MOUNTING_LABELS: Record<string, string> = {
-  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole mount", rooftop: "Rooftop support (at back)",
+  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole bracket", rooftop: "Rooftop support (at back)",
 };
-const POLE_PLACEMENTS: [PolePlacement, string, string][] = [
-  ["behind", "Behind the sign", "Poles at the back · sign faces straight"],
-  ["flanking", "Beside the sign", "Poles at the left / right edges"],
-  ["hanging", "Hanging", "Hung from a top arm / beam"],
-];
 
 const LIGHTING_OPTIONS = [["without", "Without Light"], ["with", "With Light"]] as const;
 const PRINTING_OPTIONS = [["direct", "Direct to materials"], ["sticker", "Sticker print"], ["cutout", "Sticker Cut Out"], ["uv", "UV Print"]] as const;
@@ -108,9 +103,9 @@ function MountIcon({ id }: { id: Mount }) {
       )}
       {id === "pole" && (
         <>
-          <path d="M6 41 H50" {...common} />
-          <path d="M28 41 V18" {...common} strokeWidth={3} />
-          <rect x="14" y="5" width="28" height="12" fill="currentColor" stroke="none" />
+          <rect x="8" y="6" width="26" height="32" fill="currentColor" stroke="none" />
+          <rect x="34" y="14" width="4" height="16" {...common} />
+          <path d="M38 14 Q50 22 38 30" {...common} />
         </>
       )}
       {id === "rooftop" && (
@@ -145,8 +140,6 @@ export default function QuoteBuilder() {
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
   const [mounting, setMounting] = useState<Mount>("wall");
-  const [poleCount, setPoleCount] = useState(1);
-  const [polePlacement, setPolePlacement] = useState<PolePlacement>("behind");
   const [note, setNote] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
@@ -192,11 +185,10 @@ export default function QuoteBuilder() {
   const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
   const variant = isLightbox ? lbBuild : "panaflex";
 
-  const poleMax = polePlacement === "hanging" ? 2 : 4;
-  const poles = useMemo(() => ({ count: Math.min(poleCount, poleMax), placement: polePlacement }), [poleCount, poleMax, polePlacement]);
-  const placementLabel = POLE_PLACEMENTS.find(([id]) => id === polePlacement)?.[1] ?? "";
+  // Pole bracket only (no pole in the quotation): circle = 1 bracket; rectangle = 2 when large, else 1.
+  const bracketCount = isCircle ? 1 : Math.max(width, height) >= 3 ? 2 : 1;
   const mountingText = mounting === "pole"
-    ? `Pole mount · ${poles.count} pole${poles.count > 1 ? "s" : ""} · ${placementLabel.toLowerCase()}`
+    ? `Pole bracket · ${bracketCount} bracket${bracketCount > 1 ? "s" : ""}`
     : MOUNTING_LABELS[mounting];
 
   const traits = useMemo<Traits>(() => ({
@@ -210,26 +202,30 @@ export default function QuoteBuilder() {
 
   const live = useMemo(() => {
     const markup = 1 + qs.markupPct / 100;
+    const pr = qs.pricing;
+    const key = lit ? "with" : "without";
+    const printRate = def.printing ? (pr.printing[printing] ?? 0) * sidesMult : 0;
+
     if (isLightbox) {
-      const lb = qs.lightboxRoundPricing;
-      const rate = (lbBuild === "builtup" ? lb.builtUp : lb.acrylic) * sidesMult;
-      const printRate = (qs.panaflexPricing.printing[printing] ?? 0) * sidesMult;
+      // Lightbox: one rate per sqft for the chosen build, with / without light
+      const rate = (pr.lightbox[lbBuild]?.[key] ?? 0) * sidesMult;
       const rates = { construction: rate, face: 0, lighting: 0, printing: printRate };
       const raw = (rate + printRate) * areaSqft;
-      return { rates, raw, unitCost: Math.max(lb.minimumCharge || 0, raw * markup), hasTbd: rate <= 0 };
+      return { rates, raw, unitCost: Math.max(pr.lightboxMinimumCharge || 0, raw * markup), hasTbd: rate <= 0 };
     }
-    const p = qs.panaflexPricing;
-    // Sticker and neon have no internal frame; every other service uses the internal construction rate.
+
+    // Other materials: material rate per sqft for the chosen light option (+ hidden construction, + printing)
+    // Sticker and Neon LED have no internal frame.
     const framed = serviceId !== "sticker" && serviceId !== "neon";
     const rates = {
-      construction: framed ? p.constructionPerSqft : 0,
-      face: (p.face[serviceId] ?? 0) * sidesMult,
-      lighting: p.lighting[lighting] ?? 0,
-      printing: def.printing ? (p.printing[printing] ?? 0) * sidesMult : 0,
+      construction: framed ? pr.constructionPerSqft : 0,
+      face: (pr.materials[serviceId]?.[key] ?? 0) * sidesMult,
+      lighting: 0,
+      printing: printRate,
     };
     const raw = (rates.construction + rates.face + rates.lighting + rates.printing) * areaSqft;
-    return { rates, raw, unitCost: Math.max(p.minimumCharge || 0, raw * markup), hasTbd: Object.values(rates).some((v) => v <= 0) && raw === 0 };
-  }, [qs, isLightbox, lbBuild, serviceId, lighting, printing, areaSqft, sidesMult, def.printing]);
+    return { rates, raw, unitCost: Math.max(pr.minimumCharge || 0, raw * markup), hasTbd: rates.face <= 0 };
+  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
@@ -562,29 +558,9 @@ export default function QuoteBuilder() {
                 </div>
 
                 {mounting === "pole" && (
-                  <div className="mt-3 space-y-3 rounded-xl border border-line bg-ink/30 p-3">
-                    <div>
-                      <label className={labelCls}>Pole placement</label>
-                      <div className="grid sm:grid-cols-3 gap-2">
-                        {POLE_PLACEMENTS.map(([id, name, sub]) => (
-                          <button key={id} onClick={() => setPolePlacement(id)} className={`rounded-xl border px-3 py-2.5 text-left transition ${polePlacement === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
-                            <span className="block text-sm font-semibold">{name}</span>
-                            <span className="block text-[11px] opacity-80 leading-snug">{sub}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className={labelCls}>Number of poles{polePlacement === "hanging" ? " · max 2" : ""}</label>
-                      <div className="flex gap-2">
-                        {Array.from({ length: poleMax }, (_, i) => i + 1).map((n) => (
-                          <button key={n} onClick={() => setPoleCount(n)} className={`w-12 rounded-xl border py-2.5 text-sm font-bold transition ${poles.count === n ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  <p className="mt-2 text-[11px] text-fog">
+                    Pole bracket only — the pole is not included in the quotation. {isCircle ? "Circle signs use 1 bracket." : "Rectangle: 1 bracket for smaller signs, 2 when the sign is 3 ft or larger."} Using {bracketCount} bracket{bracketCount > 1 ? "s" : ""}.
+                  </p>
                 )}
                 {mounting === "rooftop" && (
                   <p className="mt-2 text-[11px] text-fog">Steel supports are placed at the back of the signage.</p>
@@ -658,7 +634,7 @@ export default function QuoteBuilder() {
                   faceLabel={faceLabel}
                   sidesLabel={sidesLabel}
                   mountLabel={mountingText}
-                  poles={poles}
+                  brackets={bracketCount}
                   printingLabel={printingLabel || undefined}
                 />
               </div>
