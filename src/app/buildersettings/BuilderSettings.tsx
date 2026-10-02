@@ -334,9 +334,9 @@ export default function BuilderSettings() {
               </div>
 
               <div>
-                <h3 className="font-semibold mb-3">Face build · ₱ / sqft</h3>
+                <h3 className="font-semibold mb-3">Service / material rate · ₱ / sqft (per face)</h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {([['panaflex','Panaflex'],['tarp','Tarp'],['apc','APC'],['acrylic','Acrylic'],['metal','Metal Sheet'],['custom','Custom Build Face']] as const).map(([id, name]) => (
+                  {([['panaflex','Panaflex'],['acrylic','Acrylic'],['neon','Neon LED'],['apc','APC'],['tarp','Tarp'],['sticker','Sticker'],['metal','Metal Sheet'],['custom','Custom']] as const).map(([id, name]) => (
                     <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.face[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, face: { ...quote.panaflexPricing.face, [id]: +e.target.value || 0 } } })} /></div>
                   ))}
                 </div>
@@ -353,8 +353,8 @@ export default function BuilderSettings() {
 
               <div>
                 <h3 className="font-semibold mb-3">Printing · ₱ / sqft</h3>
-                <div className="grid sm:grid-cols-3 gap-3">
-                  {([['sticker','Sticker print'],['direct','Direct print to materials'],['uv','UV print']] as const).map(([id, name]) => (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {([['direct','Direct to materials'],['sticker','Sticker print'],['cutout','Sticker Cut Out'],['uv','UV Print']] as const).map(([id, name]) => (
                     <div key={id}><label className={label}>{name}</label><input type="number" min={0} step={0.01} className={input} value={quote.panaflexPricing.printing[id]} onChange={(e) => setQuote({ ...quote, panaflexPricing: { ...quote.panaflexPricing, printing: { ...quote.panaflexPricing.printing, [id]: +e.target.value || 0 } } })} /></div>
                   ))}
                 </div>
@@ -365,9 +365,9 @@ export default function BuilderSettings() {
 
             <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Lightbox Round pricing</p>
-                <h2 className="font-display text-xl font-bold">Round lightbox · max 3 ft</h2>
-                <p className="text-sm text-fog mt-1">Stored under <strong>site_settings → quote → lightboxRoundPricing</strong>. Quote Builder calculates circle area (π × r²) × rate, then applies the global markup.</p>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Lightbox pricing</p>
+                <h2 className="font-display text-xl font-bold">Lightbox · circle max 3 ft</h2>
+                <p className="text-sm text-fog mt-1">Stored under <strong>site_settings → quote → lightboxRoundPricing</strong>. Quote Builder calculates face area (circle π × r², or W × H) × rate, then applies the global markup.</p>
               </div>
               <div className="grid sm:grid-cols-3 gap-3">
                 <div><label className={label}>Built-up · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.lightboxRoundPricing.builtUp} onChange={(e) => setQuote({ ...quote, lightboxRoundPricing: { ...quote.lightboxRoundPricing, builtUp: +e.target.value || 0 } })} /></div>
