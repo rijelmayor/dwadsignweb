@@ -1,16 +1,10 @@
-import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter } from "next/font/google";
+import type { Metadata } from "next";
+import { Outfit, Inter } from "next/font/google";
 import "./globals.css";
 import { site } from "@/lib/site";
 
-const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage", display: "swap" });
-const body = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  themeColor: "#011424",
-};
+const display = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
+const body = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(`https://${site.domain}`),

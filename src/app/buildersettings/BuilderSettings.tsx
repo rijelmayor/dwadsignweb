@@ -315,7 +315,6 @@ export default function BuilderSettings() {
                 <div><label className={label}>Headline end</label><input className={input} value={landing.hero.headlineEnd} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, headlineEnd: e.target.value } })} /></div>
                 <div className="sm:col-span-2"><label className={label}>Subtext</label><textarea className={`${input} min-h-[80px]`} value={landing.hero.sub} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, sub: e.target.value } })} /></div>
               </div>
-              <div className="border-t border-line pt-5"><label className={label}>Hero background photo · URL</label><input className={input} placeholder="Leave blank to use your first project photo" value={landing.hero.backgroundImage} onChange={(e) => setLanding({ ...landing, hero: { ...landing.hero, backgroundImage: e.target.value } })} /><p className="text-[11px] text-fog mt-2">Wide, bright, well-lit photo of your best finished sign works best. The team photo below now appears in the About section.</p></div>
               <div className="grid lg:grid-cols-[1fr_280px] gap-6 items-start border-t border-line pt-5">
                 <div><label className={label}>Team photo · PNG/JPG</label><input type="file" accept="image/png,image/jpeg" onChange={handleTeam} className="block w-full rounded-lg border border-line bg-ink px-3 py-2 text-sm text-fog file:mr-3 file:rounded-md file:border-0 file:bg-teal file:px-3 file:py-1.5 file:font-semibold file:text-ink" /><p className="text-[11px] text-fog mt-2">You can also leave this blank and paste an image URL in the field below.</p><input className={`${input} mt-3`} placeholder="Or paste team image URL" value={landing.branding.teamImage} onChange={(e) => setLanding({ ...landing, branding: { ...landing.branding, teamImage: e.target.value } })} /></div>
                 <div className="rounded-xl border border-line bg-ink/60 overflow-hidden aspect-[4/3] flex items-center justify-center">{teamPreview || landing.branding.teamImage ? <img src={teamPreview || landing.branding.teamImage} alt="Team preview" className="h-full w-full object-cover" /> : <span className="text-xs text-fog">Team photo preview</span>}</div>
@@ -334,8 +333,8 @@ export default function BuilderSettings() {
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center"><div><h2 className="font-display text-xl font-bold">Services</h2><p className="text-xs text-fog mt-1">Each service now supports its own background image.</p></div><button className="text-sm text-teal hover:underline" onClick={() => setLanding({ ...landing, services: [...landing.services, { title: "New service", desc: "", icon: "◆", background: "", items: [] }] })}>+ Add</button></div>
-              {landing.services.map((s, i) => <div key={i} className="grid lg:grid-cols-[60px_1fr_1fr_auto] gap-3 items-start border-t border-line pt-4"><div><label className={label}>Icon</label><input className={input} value={s.icon} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, icon: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Title</label><input className={input} value={s.title} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, title: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Description</label><input className={input} value={s.desc} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, desc: e.target.value }; setLanding({ ...landing, services }); }} /></div><button className="text-red-400 text-sm mt-6" onClick={() => setLanding({ ...landing, services: landing.services.filter((_, j) => j !== i) })}>Remove</button><div className="lg:col-span-4"><label className={label}>Included items · comma-separated</label><input className={input} placeholder="Dimensional letters, Lightboxes, LED neon…" value={s.items.join(", ")} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, items: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) }; setLanding({ ...landing, services }); }} /></div></div>)}
+              <div className="flex justify-between items-center"><div><h2 className="font-display text-xl font-bold">Services</h2><p className="text-xs text-fog mt-1">Each service now supports its own background image.</p></div><button className="text-sm text-teal hover:underline" onClick={() => setLanding({ ...landing, services: [...landing.services, { title: "New service", desc: "", icon: "◆", background: "" }] })}>+ Add</button></div>
+              {landing.services.map((s, i) => <div key={i} className="grid lg:grid-cols-[60px_1fr_1fr_auto] gap-3 items-start border-t border-line pt-4"><div><label className={label}>Icon</label><input className={input} value={s.icon} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, icon: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Title</label><input className={input} value={s.title} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, title: e.target.value }; setLanding({ ...landing, services }); }} /></div><div><label className={label}>Description</label><input className={input} value={s.desc} onChange={(e) => { const services = [...landing.services]; services[i] = { ...s, desc: e.target.value }; setLanding({ ...landing, services }); }} /></div><button className="text-red-400 text-sm mt-6" onClick={() => setLanding({ ...landing, services: landing.services.filter((_, j) => j !== i) })}>Remove</button></div>)}
             </section>
 
             <section className="rounded-2xl border border-teal/30 bg-panel p-6 space-y-5">
@@ -352,7 +351,7 @@ export default function BuilderSettings() {
                   onClick={() =>
                     setLanding({
                       ...landing,
-                      projects: [...landing.projects, { title: "New project", tag: "", image: "", url: "", location: "", scope: "" }],
+                      projects: [...landing.projects, { title: "New project", tag: "", image: "", url: "" }],
                     })
                   }
                 >
@@ -458,30 +457,10 @@ export default function BuilderSettings() {
                       >
                         Remove
                       </button>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 lg:col-start-2">
-                        <div>
-                          <label className={label}>Location</label>
-                          <input className={input} placeholder="Cebu City" value={p.location} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, location: e.target.value }; setLanding({ ...landing, projects }); }} />
-                        </div>
-                        <div>
-                          <label className={label}>What we did</label>
-                          <input className={input} placeholder="Exterior · Fabrication · Installation" value={p.scope} onChange={(e) => { const projects = [...landing.projects]; projects[i] = { ...p, scope: e.target.value }; setLanding({ ...landing, projects }); }} />
-                        </div>
-                      </div>
                     </div>
                   );
                 })}
               </div>
-            </section>
-
-            <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center gap-4"><div><h2 className="font-display text-xl font-bold">Trust numbers</h2><p className="text-xs text-fog mt-1">Verified figures only (e.g. 500+ · Projects completed). Nothing shows on the website until you add one.</p></div><button className="text-sm text-teal hover:underline shrink-0" onClick={() => setLanding({ ...landing, stats: [...landing.stats, { value: "", label: "" }] })}>+ Add</button></div>
-              {landing.stats.map((st, i) => <div key={i} className="grid sm:grid-cols-[140px_1fr_auto] gap-3 items-end border-t border-line pt-4"><div><label className={label}>Number</label><input className={input} value={st.value} onChange={(e) => { const stats = [...landing.stats]; stats[i] = { ...st, value: e.target.value }; setLanding({ ...landing, stats }); }} /></div><div><label className={label}>Label</label><input className={input} value={st.label} onChange={(e) => { const stats = [...landing.stats]; stats[i] = { ...st, label: e.target.value }; setLanding({ ...landing, stats }); }} /></div><button className="text-red-400 text-sm pb-2" onClick={() => setLanding({ ...landing, stats: landing.stats.filter((_, j) => j !== i) })}>Remove</button></div>)}
-            </section>
-
-            <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
-              <div className="flex justify-between items-center gap-4"><div><h2 className="font-display text-xl font-bold">Trusted by · clients</h2><p className="text-xs text-fog mt-1">Client name plus an optional logo image URL. The row stays hidden until you add one.</p></div><button className="text-sm text-teal hover:underline shrink-0" onClick={() => setLanding({ ...landing, clients: [...landing.clients, { name: "", logo: "" }] })}>+ Add</button></div>
-              {landing.clients.map((c, i) => <div key={i} className="grid sm:grid-cols-[1fr_1fr_auto] gap-3 items-end border-t border-line pt-4"><div><label className={label}>Client name</label><input className={input} value={c.name} onChange={(e) => { const clients = [...landing.clients]; clients[i] = { ...c, name: e.target.value }; setLanding({ ...landing, clients }); }} /></div><div><label className={label}>Logo image URL</label><input className={input} value={c.logo} onChange={(e) => { const clients = [...landing.clients]; clients[i] = { ...c, logo: e.target.value }; setLanding({ ...landing, clients }); }} /></div><button className="text-red-400 text-sm pb-2" onClick={() => setLanding({ ...landing, clients: landing.clients.filter((_, j) => j !== i) })}>Remove</button></div>)}
             </section>
 
             <section className="rounded-2xl border border-line bg-panel p-6 space-y-4">
