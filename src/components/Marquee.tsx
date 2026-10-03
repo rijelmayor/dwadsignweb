@@ -1,50 +1,26 @@
 "use client";
 
 /**
- * Seamless infinite ticker.
- * Two identical tracks side-by-side; CSS translates by exactly one track width.
- * Pauses on hover. Respects prefers-reduced-motion via globals.css.
+ * Quiet capability strip. Two identical tracks; CSS translates by exactly one track width.
+ * Pauses on hover, stops for reduced-motion (see globals.css).
  */
 export default function Marquee({ items }: { items: string[] }) {
   if (!items?.length) return null;
-
-  const track = (
-    <div className="marquee-track flex shrink-0 items-center gap-10 pr-10" aria-hidden={false}>
+  const track = (hidden: boolean) => (
+    <div className="flex shrink-0 items-center gap-8 pr-8" aria-hidden={hidden}>
       {items.map((item, i) => (
-        <span
-          key={i}
-          className="font-display font-bold text-ink text-sm tracking-[0.25em] flex items-center gap-10 whitespace-nowrap"
-        >
+        <span key={i} className="flex items-center gap-8 whitespace-nowrap font-display text-xs font-semibold tracking-[0.22em] text-fog sm:text-sm">
           {item}
-          <span className="opacity-40 select-none" aria-hidden>
-            ✦
-          </span>
+          <span className="text-gold/70" aria-hidden>✦</span>
         </span>
       ))}
     </div>
   );
-
   return (
-    <div
-      className="marquee-root border-y border-line bg-gradient-to-r from-gold via-gold to-teal py-3.5 overflow-hidden no-print"
-      role="presentation"
-    >
+    <div className="marquee-root no-print overflow-hidden border-y border-white/10 bg-panel/60 py-4" role="presentation">
       <div className="marquee-viewport flex w-max will-change-transform">
-        {track}
-        {/* Duplicate for seamless loop — must stay identical to the first track */}
-        <div className="marquee-track flex shrink-0 items-center gap-10 pr-10" aria-hidden>
-          {items.map((item, i) => (
-            <span
-              key={`dup-${i}`}
-              className="font-display font-bold text-ink text-sm tracking-[0.25em] flex items-center gap-10 whitespace-nowrap"
-            >
-              {item}
-              <span className="opacity-40 select-none" aria-hidden>
-                ✦
-              </span>
-            </span>
-          ))}
-        </div>
+        {track(false)}
+        {track(true)}
       </div>
     </div>
   );

@@ -13,6 +13,8 @@ export interface ServiceItem {
   desc: string;
   icon: string;
   background: string;
+  /** Short list of what is included, shown when the service panel is open. */
+  items: string[];
 }
 
 export interface ProjectItem {
@@ -20,14 +22,32 @@ export interface ProjectItem {
   tag: string;
   image: string;
   url: string;
+  /** e.g. "Cebu City" */
+  location: string;
+  /** e.g. "Exterior · Fabrication · Installation" */
+  scope: string;
+}
+
+/** Verified numbers only. The Trust section stays hidden until at least one is added. */
+export interface StatItem {
+  value: string;
+  label: string;
+}
+
+/** Client / partner. The "Trusted by" row stays hidden until at least one is added. */
+export interface ClientItem {
+  name: string;
+  logo: string;
 }
 
 export interface LandingSettings {
   branding: BrandingSettings;
-  hero: { eyebrow: string; headline: string; accent: string; headlineEnd: string; sub: string; ctaLabel: string };
+  hero: { eyebrow: string; headline: string; accent: string; headlineEnd: string; sub: string; ctaLabel: string; backgroundImage: string };
   marquee: string[];
   services: ServiceItem[];
   projects: ProjectItem[];
+  stats: StatItem[];
+  clients: ClientItem[];
   contact: { phone: string; email: string; address: string; hours: string };
   links: { quoteUrl: string; facebook: string; instagram: string };
   sectionBackgrounds: { whatWeDo: string };
@@ -52,22 +72,25 @@ export const DEFAULT_LANDING: LandingSettings = {
     headline: "We make brands",
     accent: "impossible",
     headlineEnd: "to miss.",
-    sub: "From 3D signage, lightboxes and LED neon to large-format print and wall murals — designed, fabricated, and installed by one obsessive team.",
+    sub: "Signage, large-format printing, branding and visual solutions — designed, produced and installed for businesses that want to stand out.",
     ctaLabel: "Get a Quote",
+    backgroundImage: "",
   },
   marquee: ["3D ACRYLIC LETTERS", "LEDBOX SIGNS", "LED NEON", "PANAFLEX", "TARPAULIN", "WALL MURALS", "WAYFINDING", "BRANDING"],
   services: [
-    { title: "Signages", desc: "3D acrylic letters, lightboxes, LED neon flex, and wayfinding systems — fabricated in-house.", icon: "◼", background: DEFAULT_IMAGES.signages },
-    { title: "Large Format Printing", desc: "Tarpaulin banners, panaflex, stickers, decals, and UV prints at production-grade quality.", icon: "▤", background: DEFAULT_IMAGES.largeFormatPrinting },
-    { title: "Branding & Display", desc: "Roll-up banners, wall murals, trade-show displays, and complete brand environments.", icon: "◈", background: DEFAULT_IMAGES.brandingDisplay },
+    { title: "Signages", desc: "3D acrylic letters, lightboxes, LED neon flex, and wayfinding systems — fabricated in-house.", icon: "◼", background: DEFAULT_IMAGES.signages, items: ["Dimensional letters", "Lightboxes", "LED neon", "Channel letters", "Pylon signs", "Building signage"] },
+    { title: "Large Format Printing", desc: "Tarpaulin banners, panaflex, stickers, decals, and UV prints at production-grade quality.", icon: "▤", background: DEFAULT_IMAGES.largeFormatPrinting, items: ["Tarpaulin", "Panaflex", "Stickers", "Wall graphics", "Banners", "UV printing"] },
+    { title: "Branding & Display", desc: "Roll-up banners, wall murals, trade-show displays, and complete brand environments.", icon: "◈", background: DEFAULT_IMAGES.brandingDisplay, items: ["Corporate identity", "Retail branding", "Exhibition displays", "Promotional booths", "Point-of-sale"] },
   ],
   projects: [
-    { title: "Neon Café Identity", tag: "LED Neon", image: "", url: "" },
-    { title: "Retail Lightbox Wall", tag: "Lightbox", image: "", url: "" },
-    { title: "Storefront Panaflex Sign", tag: "Panaflex", image: "", url: "" },
-    { title: "Office Wayfinding Suite", tag: "Signage", image: "", url: "" },
-    { title: "Mall Atrium Mural", tag: "Wall Mural", image: "", url: "" },
+    { title: "Neon Café Identity", tag: "LED Neon", image: "", url: "", location: "", scope: "" },
+    { title: "Retail Lightbox Wall", tag: "Lightbox", image: "", url: "", location: "", scope: "" },
+    { title: "Storefront Panaflex Sign", tag: "Panaflex", image: "", url: "", location: "", scope: "" },
+    { title: "Office Wayfinding Suite", tag: "Signage", image: "", url: "", location: "", scope: "" },
+    { title: "Mall Atrium Mural", tag: "Wall Mural", image: "", url: "", location: "", scope: "" },
   ],
+  stats: [],
+  clients: [],
   contact: {
     phone: "+63 (XXX) XXX-XXXX",
     email: "hello@dwadsign.com",
@@ -108,12 +131,23 @@ export function mergeLanding(raw: unknown): LandingSettings {
       ...d.services[i % d.services.length],
       ...(s as Partial<ServiceItem>),
       background: str((s as Partial<ServiceItem>).background, d.services[i % d.services.length]?.background ?? ""),
+      items: Array.isArray((s as Partial<ServiceItem>).items)
+        ? ((s as Partial<ServiceItem>).items as unknown[]).filter((x): x is string => typeof x === "string" && x.trim() !== "")
+        : (d.services[i]?.items ?? []),
     })),
     projects: nonEmptyArray(r.projects, d.projects).map((p, i) => ({
       ...d.projects[i % d.projects.length],
       ...(p as Partial<ProjectItem>),
       url: str((p as Partial<ProjectItem>).url, ""),
+      location: str((p as Partial<ProjectItem>).location, ""),
+      scope: str((p as Partial<ProjectItem>).scope, ""),
     })),
+    stats: (Array.isArray(r.stats) ? (r.stats as Partial<StatItem>[]) : [])
+      .map((x) => ({ value: str(x?.value, "").trim(), label: str(x?.label, "").trim() }))
+      .filter((x) => x.value && x.label),
+    clients: (Array.isArray(r.clients) ? (r.clients as Partial<ClientItem>[]) : [])
+      .map((x) => ({ name: str(x?.name, "").trim(), logo: str(x?.logo, "").trim() }))
+      .filter((x) => x.name || x.logo),
     contact: { ...d.contact, ...rc },
     links: { ...d.links, ...rl },
     sectionBackgrounds: { whatWeDo: str(rs.whatWeDo, d.sectionBackgrounds.whatWeDo) },

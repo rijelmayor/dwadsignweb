@@ -1,56 +1,31 @@
 const steps = [
-  {
-    n: "01",
-    title: "Brief & Site Survey",
-    desc: "Tell us the goal. We measure, photograph, and check mounting surfaces and power.",
-  },
-  {
-    n: "02",
-    title: "Design & Quotation",
-    desc: "Concepts with exact pricing. Your sales specialist builds your quote in minutes.",
-  },
-  {
-    n: "03",
-    title: "Fabrication",
-    desc: "In-house production with materials matched to your environment and budget.",
-  },
-  {
-    n: "04",
-    title: "Install & Handover",
-    desc: "Certified installation, clean wiring, and a walkthrough before we leave.",
-  },
+  { title: "Discover", desc: "Tell us the goal. We visit, measure and check the mounting surface and power." },
+  { title: "Design", desc: "A visual direction and an exact quotation, built by your sales specialist in minutes." },
+  { title: "Produce", desc: "In-house fabrication and printing, with materials matched to your space and budget." },
+  { title: "Install", desc: "Certified installation and clean wiring by the team that built it." },
+  { title: "Deliver", desc: "A walkthrough before we leave, and a finished sign that's ready for business." },
 ];
 
 export default function Process() {
   return (
-    <section id="process" className="relative px-6 py-24 border-t border-white/10 overflow-hidden">
-      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-px w-2/3 bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
-      <div className="mx-auto max-w-7xl">
-        <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-4">How it works</p>
-        <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-16">
-          From idea to installed in four steps.
+    <section id="process" className="relative border-t border-white/10 py-16 sm:py-24 lg:py-32">
+      <div className="mx-auto max-w-7xl px-5 sm:px-8">
+        <h2 className="mb-10 max-w-4xl font-display text-[clamp(2.2rem,6vw,4.5rem)] font-extrabold uppercase leading-[0.95] tracking-[-0.03em] text-balance sm:mb-16">
+          From idea to installation
         </h2>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+
+        <ol className="relative grid gap-0 md:grid-cols-5 md:gap-6">
+          <div aria-hidden className="absolute left-[1.15rem] top-2 bottom-2 w-px bg-gradient-to-b from-teal/60 via-line to-gold/50 md:left-0 md:right-0 md:top-[1.15rem] md:bottom-auto md:h-px md:w-auto md:bg-gradient-to-r" />
           {steps.map((s, i) => (
-            <div
-              key={s.n}
-              className="group relative border-l border-line pl-6 hover:border-teal/50 transition duration-300"
-            >
-              <span className="font-display text-gradient text-4xl font-bold transition duration-300 group-hover:scale-110 origin-left inline-block">
-                {s.n}
+            <li key={s.title} className="relative pb-9 pl-14 last:pb-0 md:pb-0 md:pl-0 md:pt-14">
+              <span className="absolute left-0 top-0 flex h-[2.3rem] w-[2.3rem] items-center justify-center rounded-full border border-teal/60 bg-ink font-display text-sm font-bold tabular-nums text-teal">
+                {i + 1}
               </span>
-              <h3 className="font-display font-bold text-lg mt-4 mb-2 group-hover:text-gold transition-colors">
-                {s.title}
-              </h3>
-              <p className="text-fog text-sm leading-relaxed">{s.desc}</p>
-              {i < steps.length - 1 && (
-                <div className="hidden lg:block absolute -right-3 top-8 text-line text-xl opacity-40 group-hover:opacity-70 transition">
-                  →
-                </div>
-              )}
-            </div>
+              <h3 className="font-display text-xl font-bold sm:text-2xl">{s.title}</h3>
+              <p className="mt-2 max-w-xs text-sm leading-relaxed text-fog sm:text-base">{s.desc}</p>
+            </li>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   );

@@ -354,8 +354,8 @@ export default function QuoteBuilder() {
 
   return (
     <div className="min-h-screen bg-ink text-white">
-      <header className="sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
-        <div className="mx-auto max-w-[1600px] px-4 h-14 flex items-center justify-between gap-4">
+      <header className="lg:sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
+        <div className="mx-auto max-w-[1600px] px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex items-center gap-3">
             <Link href="/"><Image src="/logo-mark.png" alt="DW" width={120} height={58} className="h-8 w-auto" /></Link>
             <span className="font-display font-bold text-sm hidden sm:inline">
@@ -365,7 +365,7 @@ export default function QuoteBuilder() {
               <span className="text-[10px] rounded bg-amber-500/20 text-amber-300 px-2 py-0.5 border border-amber-500/40">Supabase offline</span>
             )}
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="no-scrollbar -mx-4 flex max-w-[100vw] items-center gap-2 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&>*]:shrink-0">
             <Link href="/buildersettings" className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">
               Builder Settings
             </Link>
@@ -605,7 +605,7 @@ export default function QuoteBuilder() {
           </section>
 
           {/* RIGHT — live 3D (sticky while building) */}
-          <aside className="lg:sticky lg:top-20 space-y-3">
+          <aside className="order-first lg:order-none max-lg:sticky max-lg:top-0 max-lg:z-30 lg:sticky lg:top-20 space-y-3">
             <div className="rounded-2xl border border-line bg-panel overflow-hidden">
               <div className="px-4 py-2.5 border-b border-line flex items-center justify-between gap-2">
                 <div>
@@ -616,7 +616,7 @@ export default function QuoteBuilder() {
                   {isCircle ? `Ø ${ft(diameter)}'` : `${ft(height)}' H × ${ft(width)}' W`} · {thicknessIn}&quot; T
                 </span>
               </div>
-              <div className="h-[min(62vh,560px)] min-h-[420px]">
+              <div className="h-[30dvh] min-h-[220px] sm:h-[42dvh] lg:h-[min(62dvh,560px)] lg:min-h-[420px]">
                 <SignScene
                   ref={sceneRef}
                   widthFt={dimW}
@@ -639,7 +639,7 @@ export default function QuoteBuilder() {
                 />
               </div>
             </div>
-            <p className="text-xs text-fog text-center px-2">
+            <p className="max-lg:hidden text-xs text-fog text-center px-2">
               Black dimension labels · full-bleed logo · bulb = lit. Rotate with mouse. Add to Quote captures front, side &amp; 3D.
             </p>
           </aside>
