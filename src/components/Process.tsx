@@ -23,14 +23,14 @@ const steps = [
 
 export default function Process() {
   return (
-    <section id="process" className="relative px-6 py-24 border-t border-white/10 overflow-hidden">
+    <section id="process" className="relative px-4 sm:px-6 py-16 sm:py-24 border-t border-white/10 overflow-hidden">
       <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-px w-2/3 bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
       <div className="mx-auto max-w-7xl">
-        <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-4">How it works</p>
-        <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-16">
+        <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-3 sm:mb-4">How it works</p>
+        <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-10 sm:mb-16">
           From idea to installed in four steps.
         </h2>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 sm:gap-8 md:grid-cols-2 lg:grid-cols-4">
           {steps.map((s, i) => (
             <div
               key={s.n}

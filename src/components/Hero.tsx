@@ -35,7 +35,7 @@ export default function Hero({
   return (
     <section
       ref={sectionRef}
-      className="relative pt-[5.5rem] sm:pt-24 lg:pt-28 pb-10 sm:pb-14 px-5 sm:px-6 overflow-hidden"
+      className="relative pt-[4.5rem] sm:pt-24 lg:pt-28 pb-10 sm:pb-14 px-4 sm:px-6 overflow-hidden"
     >
       {/* Parallax glow orbs */}
       <div
@@ -57,7 +57,7 @@ export default function Hero({
             {hero.eyebrow}
           </p>
           <h1
-            className="rise font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold leading-[0.95] tracking-tight"
+            className="rise font-display text-[2rem] leading-[1.05] sm:text-5xl md:text-6xl lg:text-7xl font-bold sm:leading-[0.95] tracking-tight"
             style={{ animationDelay: "0.1s" }}
           >
             {hero.headline}{" "}

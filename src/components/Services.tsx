@@ -3,7 +3,7 @@ import type { ServiceItem } from "@/lib/settings";
 export default function Services({ services, background }: { services: ServiceItem[]; background: string }) {
   const cols = services.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3";
   return (
-    <section id="services" className="relative px-5 sm:px-6 py-24 overflow-hidden">
+    <section id="services" className="relative px-4 sm:px-6 py-16 sm:py-24 overflow-hidden">
       {background && (
         <div
           className="absolute inset-0 bg-cover bg-center opacity-20"
@@ -14,15 +14,15 @@ export default function Services({ services, background }: { services: ServiceIt
       <div className="pointer-events-none absolute top-1/2 left-0 h-64 w-64 -translate-y-1/2 rounded-full bg-gold/5 blur-[80px]" />
       <div className="pointer-events-none absolute top-1/2 right-0 h-64 w-64 -translate-y-1/2 rounded-full bg-teal/5 blur-[80px]" />
       <div className="relative mx-auto max-w-7xl">
-        <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-4">What we do</p>
-        <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-16">
+        <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-3 sm:mb-4">What we do</p>
+        <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-10 sm:mb-16">
           Everything your brand needs to be seen.
         </h2>
-        <div className={`grid gap-6 sm:grid-cols-2 ${cols}`}>
+        <div className={`grid gap-4 sm:gap-6 sm:grid-cols-2 ${cols}`}>
           {services.map((s) => (
             <div
               key={s.title}
-              className="water-card glass-panel group relative min-h-[280px] rounded-3xl overflow-hidden p-8 hover:-translate-y-2 transition duration-500 hover:shadow-[0_20px_60px_rgba(30,202,201,0.12)]"
+              className="water-card glass-panel group relative min-h-[240px] sm:min-h-[280px] rounded-2xl sm:rounded-3xl overflow-hidden p-6 sm:p-8 hover:-translate-y-2 transition duration-500 hover:shadow-[0_20px_60px_rgba(30,202,201,0.12)]"
             >
               {s.background && (
                 <img

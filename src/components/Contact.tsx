@@ -11,12 +11,12 @@ export default function Contact({
   links: LandingSettings["links"];
 }) {
   return (
-    <section id="contact" className="relative px-6 py-24 border-t border-white/10 overflow-hidden">
+    <section id="contact" className="relative px-4 sm:px-6 py-16 sm:py-24 border-t border-white/10 overflow-hidden">
       <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full bg-gold/8 blur-[100px]" />
-      <div className="mx-auto max-w-7xl grid lg:grid-cols-2 gap-16">
+      <div className="mx-auto max-w-7xl grid lg:grid-cols-2 gap-10 lg:gap-16">
         <div>
-          <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-4">Get in touch</p>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-8">
+          <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-3 sm:mb-4">Get in touch</p>
+          <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-6 sm:mb-8">
             Let&apos;s put your name in lights.
           </h2>
           <div className="space-y-5 text-fog">

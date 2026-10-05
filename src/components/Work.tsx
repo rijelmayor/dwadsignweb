@@ -58,13 +58,13 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
   }, [selected, navigate]);
 
   return (
-    <section id="work" className="relative px-5 sm:px-6 py-24 border-t border-white/10">
+    <section id="work" className="relative px-4 sm:px-6 py-16 sm:py-24 border-t border-white/10 overflow-x-hidden">
       <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-px w-2/3 bg-gradient-to-r from-transparent via-teal/40 to-transparent" />
       <div className="mx-auto max-w-7xl">
-        <div className="mb-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+        <div className="mb-8 sm:mb-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 sm:gap-6">
           <div>
-            <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-4">Selected work</p>
-            <h2 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">Built. Lit. Installed.</h2>
+            <p className="text-teal text-sm font-semibold tracking-[0.3em] uppercase mb-3 sm:mb-4">Selected work</p>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">Built. Lit. Installed.</h2>
             <p className="mt-4 max-w-2xl text-fog">
               A living portfolio of signs, print, branding and display work by DW AdSign.
             </p>
@@ -97,11 +97,11 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
                   key={`${p.title}-${i}`}
                   type="button"
                   onClick={() => openProject(p, filteredIndex)}
-                  className={`water-card glass-panel group relative rounded-3xl overflow-hidden aspect-[4/3] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${
+                  className={`water-card glass-panel group relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[4/3] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${
                     i % 7 === 0
                       ? "lg:col-span-2 lg:aspect-[16/9]"
                       : i % 7 === 4
-                        ? "lg:row-span-2 lg:aspect-auto min-h-[430px]"
+                        ? "lg:row-span-2 lg:aspect-auto lg:min-h-[430px]"
                         : ""
                   }`}
                 >
@@ -177,12 +177,12 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
               </svg>
             </button>
 
-            {/* Nav arrows */}
+            {/* Nav arrows — smaller & safer on phones */}
             {filtered.length > 1 && (
               <>
                 <button
                   onClick={() => navigate(-1)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-ink/60 text-white backdrop-blur-md border border-white/10 hover:bg-teal hover:text-ink hover:border-teal transition duration-200"
+                  className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-ink/60 text-white backdrop-blur-md border border-white/10 hover:bg-teal hover:text-ink hover:border-teal transition duration-200"
                   aria-label="Previous project"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -191,7 +191,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
                 </button>
                 <button
                   onClick={() => navigate(1)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-ink/60 text-white backdrop-blur-md border border-white/10 hover:bg-teal hover:text-ink hover:border-teal transition duration-200"
+                  className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-ink/60 text-white backdrop-blur-md border border-white/10 hover:bg-teal hover:text-ink hover:border-teal transition duration-200"
                   aria-label="Next project"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.5">
