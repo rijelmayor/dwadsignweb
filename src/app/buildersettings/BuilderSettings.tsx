@@ -51,8 +51,22 @@ async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
-/** Fast resize + JPEG compress for project portfolio images (web-optimized). */
+const VIDEO_MIME = /^(video\/(mp4|webm|quicktime|x-m4v|ogg)|application\/octet-stream)$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i;
+const MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80 MB soft limit for portfolio clips
+
+function isVideoFile(file: File): boolean {
+  if (file.type.startsWith("video/")) return true;
+  return VIDEO_EXT.test(file.name);
+}
+
+function isVideoSrc(src: string): boolean {
+  return VIDEO_EXT.test(src);
+}
+
+/** Fast resize + JPEG compress for project portfolio images (web-optimized). Videos are left as-is. */
 async function compressProjectImage(file: File, maxEdge = 1600, quality = 0.82): Promise<File> {
+  if (isVideoFile(file)) return file;
   // Skip compress for already-small files under ~400KB
   if (file.size < 400_000 && (file.type === "image/jpeg" || file.type === "image/webp")) {
     return file;
@@ -188,30 +202,60 @@ export default function BuilderSettings() {
       const sb = createClient();
       if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); setUploadProgress(""); return; }
 
-      // Project images: compress client-side, then upload in parallel for speed.
+      // Project media (images + videos): compress images client-side, upload videos as-is.
       const fileEntries = Object.entries(projectFiles);
       if (fileEntries.length) {
-        setUploadProgress(`Compressing ${fileEntries.length} project image${fileEntries.length > 1 ? "s" : ""}…`);
+        const videoCount = fileEntries.filter(([, f]) => isVideoFile(f)).length;
+        const imageCount = fileEntries.length - videoCount;
+        setUploadProgress(
+          videoCount && imageCount
+            ? `Preparing ${imageCount} image${imageCount > 1 ? "s" : ""} + ${videoCount} video${videoCount > 1 ? "s" : ""}…`
+            : videoCount
+              ? `Uploading ${videoCount} video${videoCount > 1 ? "s" : ""}…`
+              : `Compressing ${imageCount} project image${imageCount > 1 ? "s" : ""}…`
+        );
         const uploaded = [...next.projects];
         const results = await Promise.all(
           fileEntries.map(async ([indexText, file]) => {
             const index = Number(indexText);
             if (!uploaded[index]) return null;
-            const compressed = await compressProjectImage(file);
+            if (isVideoFile(file) && file.size > MAX_VIDEO_BYTES) {
+              throw new Error(
+                `Video "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(0)} MB). Keep clips under 80 MB.`
+              );
+            }
+            const media = await compressProjectImage(file);
             const safeTitle =
               uploaded[index].title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
-            const ext = compressed.type === "image/png" ? "png" : compressed.type === "image/webp" ? "webp" : "jpg";
+            let ext = "jpg";
+            let contentType = media.type || "image/jpeg";
+            if (isVideoFile(media)) {
+              if (media.type.includes("webm") || media.name.toLowerCase().endsWith(".webm")) {
+                ext = "webm";
+                contentType = "video/webm";
+              } else if (media.type.includes("quicktime") || media.name.toLowerCase().endsWith(".mov")) {
+                ext = "mov";
+                contentType = "video/quicktime";
+              } else {
+                ext = "mp4";
+                contentType = "video/mp4";
+              }
+            } else if (media.type === "image/png") {
+              ext = "png";
+            } else if (media.type === "image/webp") {
+              ext = "webp";
+            }
             const path = `projects/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeTitle}.${ext}`;
             const { error: uploadError } = await sb.storage
               .from("landing-assets")
-              .upload(path, compressed, {
+              .upload(path, media, {
                 upsert: false,
-                contentType: compressed.type || "image/jpeg",
+                contentType,
                 cacheControl: "31536000",
               });
             if (uploadError)
               throw new Error(
-                `Project image upload failed: ${uploadError.message}. Run the landing-assets storage migration first.`
+                `Project media upload failed: ${uploadError.message}. Run the landing-assets storage migration first.`
               );
             const { data: publicData } = sb.storage.from("landing-assets").getPublicUrl(path);
             return { index, url: publicData.publicUrl };
@@ -343,7 +387,7 @@ export default function BuilderSettings() {
                   <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Portfolio manager</p>
                   <h2 className="font-display text-xl font-bold">Projects / Work</h2>
                   <p className="text-xs text-fog mt-1">
-                    Images are compressed in-browser and uploaded in parallel — much faster. Preview appears instantly.
+                    Upload photos or short videos (MP4 / WebM / MOV). Images are compressed; videos upload as-is (max ~80&nbsp;MB). Preview appears instantly.
                   </p>
                 </div>
                 <button
@@ -361,12 +405,15 @@ export default function BuilderSettings() {
               <div className="rounded-xl border border-line bg-ink/40 p-4 text-xs text-fog">
                 Tip: add as many projects as you want. The public portfolio groups them by category, shows a polished
                 gallery with keyboard navigation, and adds <strong className="text-white">Load more</strong> when the
-                collection gets large. Large images are auto-resized to ~1600px and JPEG-compressed before upload.
+                collection gets large. Images are auto-resized to ~1600px and JPEG-compressed. Videos play muted in the
+                gallery and lightbox so the site stays quiet for visitors.
               </div>
               <div className="space-y-4">
                 {landing.projects.map((p, i) => {
                   const previewSrc = projectPreviews[i] || p.image;
                   const hasPending = Boolean(projectFiles[i]);
+                  const pendingFile = projectFiles[i];
+                  const previewIsVideo = pendingFile ? isVideoFile(pendingFile) : isVideoSrc(previewSrc || "");
                   return (
                     <div
                       key={i}
@@ -378,20 +425,31 @@ export default function BuilderSettings() {
                         }`}
                       >
                         {previewSrc ? (
-                          <img
-                            src={previewSrc}
-                            alt=""
-                            className="absolute inset-0 h-full w-full object-cover"
-                          />
+                          previewIsVideo ? (
+                            <video
+                              src={previewSrc}
+                              muted
+                              playsInline
+                              loop
+                              autoPlay
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          ) : (
+                            <img
+                              src={previewSrc}
+                              alt=""
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          )
                         ) : (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[11px] text-fog group-hover:text-teal transition">
                             <span className="text-lg opacity-50">+</span>
-                            <span>No image</span>
+                            <span>Image / video</span>
                           </div>
                         )}
                         <input
                           type="file"
-                          accept="image/png,image/jpeg,image/webp"
+                          accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
                           className="sr-only"
                           onChange={(e) => handleProjectImage(i, e.target.files?.[0])}
                         />
@@ -402,7 +460,13 @@ export default function BuilderSettings() {
                               : "bg-ink/80 text-white group-hover:bg-teal/80 group-hover:text-ink"
                           }`}
                         >
-                          {hasPending ? "Ready to save" : previewSrc ? "Replace image" : "Choose image"}
+                          {hasPending
+                            ? "Ready to save"
+                            : previewSrc
+                              ? previewIsVideo
+                                ? "Replace video"
+                                : "Replace media"
+                              : "Choose media"}
                         </span>
                       </label>
                       <div>

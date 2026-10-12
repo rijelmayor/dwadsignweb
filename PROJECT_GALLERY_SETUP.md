@@ -1,4 +1,4 @@
-# DW AdSign — Projects / Work image gallery
+# DW AdSign — Projects / Work gallery
 
 ## Supabase setup
 
@@ -6,7 +6,7 @@ Run this migration once in your Supabase SQL Editor:
 
 `supabase/migrations/20261002_landing_project_storage.sql`
 
-It creates the public `landing-assets` Storage bucket and the policies required for the Builder Settings image uploader.
+It creates the public `landing-assets` Storage bucket and the policies required for the Builder Settings uploader.
 
 You do **not** need to create the bucket manually.
 
@@ -20,12 +20,18 @@ For each project:
 
 1. Add the project title.
 2. Select a category/tag.
-3. Choose the project image from your computer.
+3. Choose an **image** (PNG / JPEG / WebP) **or a short video** (MP4 / WebM / MOV, max ~80 MB).
 4. Save Landing Settings.
 
-The image is uploaded individually to Supabase Storage under `landing-assets/projects/`. The landing-page settings store the resulting public image address as project metadata.
+Media is uploaded to Supabase Storage under `landing-assets/projects/`. The landing-page settings store the resulting public URL as project metadata.
 
-There is no need to enter an image URL and no need to place project images in GitHub.
+There is no need to enter a media URL and no need to place project files in GitHub.
+
+## Video behavior
+
+- Videos play **muted** in the grid (loop + autoplay) and in the full-screen lightbox.
+- Lightbox includes standard controls (still muted by default so the site stays quiet).
+- A small play badge appears on video cards so visitors know it’s a clip.
 
 ## Gallery behavior
 
@@ -33,5 +39,5 @@ There is no need to enter an image URL and no need to place project images in Gi
 - Category filters are generated from project categories.
 - The first 9 projects are shown initially.
 - Additional projects are revealed with **Load More**.
-- Project images are lazy-loaded where supported.
+- Images are lazy-loaded where supported.
 - Clicking a project opens the larger glassmorphism viewer.

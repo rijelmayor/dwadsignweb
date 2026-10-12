@@ -3,12 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectItem } from "@/lib/settings";
 
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i;
+
+function isVideoSrc(src: string): boolean {
+  return VIDEO_EXT.test(src);
+}
+
 export default function Work({ projects }: { projects: ProjectItem[] }) {
   const [filter, setFilter] = useState("All");
   const [visible, setVisible] = useState(9);
   const [selected, setSelected] = useState<ProjectItem | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(projects.map((p) => p.tag.trim()).filter(Boolean)))],
@@ -28,7 +34,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
   function openProject(p: ProjectItem, indexInFiltered: number) {
     setSelected(p);
     setSelectedIndex(indexInFiltered);
-    setImageLoaded(false);
+    setMediaLoaded(false);
   }
 
   const navigate = useCallback(
@@ -37,7 +43,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
       const next = (selectedIndex + dir + filtered.length) % filtered.length;
       setSelectedIndex(next);
       setSelected(filtered[next]);
-      setImageLoaded(false);
+      setMediaLoaded(false);
     },
     [filtered, selectedIndex]
   );
@@ -92,6 +98,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((p, i) => {
               const filteredIndex = filtered.indexOf(p);
+              const video = Boolean(p.image && isVideoSrc(p.image));
               return (
                 <button
                   key={`${p.title}-${i}`}
@@ -106,17 +113,36 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
                   }`}
                 >
                   {p.image ? (
-                    <img
-                      src={p.image}
-                      alt={p.title}
-                      loading="lazy"
-                      className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
-                    />
+                    video ? (
+                      <video
+                        src={p.image}
+                        muted
+                        playsInline
+                        loop
+                        autoPlay
+                        preload="metadata"
+                        className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                      />
+                    ) : (
+                      <img
+                        src={p.image}
+                        alt={p.title}
+                        loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                      />
+                    )
                   ) : (
                     <div className="absolute inset-0 bg-gradient-to-br from-panel-2 to-ink" />
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-ink/95 via-ink/20 to-transparent opacity-90 group-hover:opacity-100 transition duration-500" />
                   <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500 bg-[radial-gradient(circle_at_50%_80%,rgba(30,202,201,0.15),transparent_50%)]" />
+                  {video && (
+                    <span className="absolute top-4 left-4 flex h-8 w-8 items-center justify-center rounded-full bg-ink/60 border border-white/20 backdrop-blur-md">
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-white ml-0.5" fill="currentColor">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  )}
                   <span className="absolute top-4 right-4 rounded-full border border-white/20 bg-ink/50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white/90 backdrop-blur-md opacity-0 translate-y-2 scale-95 transition-all duration-400 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100">
                     View project
                   </span>
@@ -166,7 +192,6 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
             className="relative max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[1.75rem] border border-white/15 bg-panel/95 shadow-[0_40px_100px_rgba(0,0,0,0.6)] animate-in zoom-in-95 fade-in duration-300"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close */}
             <button
               onClick={() => setSelected(null)}
               className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-ink/70 text-white backdrop-blur-md border border-white/10 hover:bg-gold hover:text-ink hover:border-gold transition duration-200"
@@ -177,7 +202,6 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
               </svg>
             </button>
 
-            {/* Nav arrows — smaller & safer on phones */}
             {filtered.length > 1 && (
               <>
                 <button
@@ -203,20 +227,35 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
 
             {selected.image ? (
               <div className="relative bg-ink min-h-[40vh] flex items-center justify-center">
-                {!imageLoaded && (
+                {!mediaLoaded && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-10 w-10 rounded-full border-2 border-teal/30 border-t-teal animate-spin" />
                   </div>
                 )}
-                <img
-                  src={selected.image}
-                  alt={selected.title}
-                  onLoad={() => setImageLoaded(true)}
-                  className={`max-h-[78vh] w-full object-contain transition-opacity duration-500 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-                />
+                {isVideoSrc(selected.image) ? (
+                  <video
+                    key={selected.image}
+                    src={selected.image}
+                    muted
+                    playsInline
+                    loop
+                    autoPlay
+                    controls
+                    controlsList="nodownload"
+                    onLoadedData={() => setMediaLoaded(true)}
+                    className={`max-h-[78vh] w-full object-contain transition-opacity duration-500 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                  />
+                ) : (
+                  <img
+                    src={selected.image}
+                    alt={selected.title}
+                    onLoad={() => setMediaLoaded(true)}
+                    className={`max-h-[78vh] w-full object-contain transition-opacity duration-500 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
+                  />
+                )}
               </div>
             ) : (
-              <div className="h-96 flex items-center justify-center text-fog">Project image not available.</div>
+              <div className="h-96 flex items-center justify-center text-fog">Project media not available.</div>
             )}
 
             <div className="p-5 sm:p-6 flex items-center justify-between gap-4 border-t border-white/10 bg-panel/80 backdrop-blur-xl">
