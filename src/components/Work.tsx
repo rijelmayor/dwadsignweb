@@ -5,8 +5,10 @@ import type { ProjectItem } from "@/lib/settings";
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i;
 
-function isVideoSrc(src: string): boolean {
-  return VIDEO_EXT.test(src);
+function projectIsVideo(p: ProjectItem): boolean {
+  if (p.mediaType === "video") return true;
+  if (p.mediaType === "image") return false;
+  return Boolean(p.image && VIDEO_EXT.test(p.image));
 }
 
 export default function Work({ projects }: { projects: ProjectItem[] }) {
@@ -15,6 +17,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
   const [selected, setSelected] = useState<ProjectItem | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(projects.map((p) => p.tag.trim()).filter(Boolean)))],
@@ -35,6 +38,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
     setSelected(p);
     setSelectedIndex(indexInFiltered);
     setMediaLoaded(false);
+    setMediaError(false);
   }
 
   const navigate = useCallback(
@@ -44,6 +48,7 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
       setSelectedIndex(next);
       setSelected(filtered[next]);
       setMediaLoaded(false);
+      setMediaError(false);
     },
     [filtered, selectedIndex]
   );
@@ -98,10 +103,10 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((p, i) => {
               const filteredIndex = filtered.indexOf(p);
-              const video = Boolean(p.image && isVideoSrc(p.image));
+              const video = projectIsVideo(p);
               return (
                 <button
-                  key={`${p.title}-${i}`}
+                  key={`${p.title}-${i}-${p.image}`}
                   type="button"
                   onClick={() => openProject(p, filteredIndex)}
                   className={`water-card glass-panel group relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[4/3] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${
@@ -177,7 +182,6 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
         )}
       </div>
 
-      {/* Full-screen lightbox */}
       {selected && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6"
@@ -227,12 +231,20 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
 
             {selected.image ? (
               <div className="relative bg-ink min-h-[40vh] flex items-center justify-center">
-                {!mediaLoaded && (
+                {!mediaLoaded && !mediaError && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-10 w-10 rounded-full border-2 border-teal/30 border-t-teal animate-spin" />
                   </div>
                 )}
-                {isVideoSrc(selected.image) ? (
+                {mediaError ? (
+                  <div className="p-8 text-center text-fog max-w-md">
+                    <p className="text-lg text-white mb-2">Video couldn&apos;t play</p>
+                    <p className="text-sm">
+                      Use an <strong className="text-white">H.264 MP4</strong> (or WebM). Phone camera MOV/HEVC files often
+                      won&apos;t play in Chrome. Re-export and re-upload the clip.
+                    </p>
+                  </div>
+                ) : projectIsVideo(selected) ? (
                   <video
                     key={selected.image}
                     src={selected.image}
@@ -242,7 +254,13 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
                     autoPlay
                     controls
                     controlsList="nodownload"
+                    preload="auto"
                     onLoadedData={() => setMediaLoaded(true)}
+                    onCanPlay={() => setMediaLoaded(true)}
+                    onError={() => {
+                      setMediaError(true);
+                      setMediaLoaded(true);
+                    }}
                     className={`max-h-[78vh] w-full object-contain transition-opacity duration-500 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
                   />
                 ) : (
@@ -250,6 +268,10 @@ export default function Work({ projects }: { projects: ProjectItem[] }) {
                     src={selected.image}
                     alt={selected.title}
                     onLoad={() => setMediaLoaded(true)}
+                    onError={() => {
+                      setMediaError(true);
+                      setMediaLoaded(true);
+                    }}
                     className={`max-h-[78vh] w-full object-contain transition-opacity duration-500 ${mediaLoaded ? "opacity-100" : "opacity-0"}`}
                   />
                 )}

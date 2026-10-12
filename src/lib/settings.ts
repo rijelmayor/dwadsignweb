@@ -18,7 +18,10 @@ export interface ServiceItem {
 export interface ProjectItem {
   title: string;
   tag: string;
+  /** Public URL of image or video in landing-assets storage */
   image: string;
+  /** Hint for the gallery — set on upload; inferred from URL if missing */
+  mediaType?: "image" | "video";
   url: string;
 }
 
@@ -109,11 +112,23 @@ export function mergeLanding(raw: unknown): LandingSettings {
       ...(s as Partial<ServiceItem>),
       background: str((s as Partial<ServiceItem>).background, d.services[i % d.services.length]?.background ?? ""),
     })),
-    projects: nonEmptyArray(r.projects, d.projects).map((p, i) => ({
-      ...d.projects[i % d.projects.length],
-      ...(p as Partial<ProjectItem>),
-      url: str((p as Partial<ProjectItem>).url, ""),
-    })),
+    projects: nonEmptyArray(r.projects, d.projects).map((p, i) => {
+      const partial = p as Partial<ProjectItem>;
+      const image = str(partial.image, d.projects[i % d.projects.length]?.image ?? "");
+      const inferred: ProjectItem["mediaType"] =
+        partial.mediaType === "video" || partial.mediaType === "image"
+          ? partial.mediaType
+          : /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i.test(image)
+            ? "video"
+            : "image";
+      return {
+        ...d.projects[i % d.projects.length],
+        ...partial,
+        image,
+        mediaType: inferred,
+        url: str(partial.url, ""),
+      };
+    }),
     contact: { ...d.contact, ...rc },
     links: { ...d.links, ...rl },
     sectionBackgrounds: { whatWeDo: str(rs.whatWeDo, d.sectionBackgrounds.whatWeDo) },

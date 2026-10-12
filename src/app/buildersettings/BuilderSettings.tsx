@@ -53,7 +53,7 @@ async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
 
 const VIDEO_MIME = /^(video\/(mp4|webm|quicktime|x-m4v|ogg)|application\/octet-stream)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogg)(\?|$)/i;
-const MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80 MB soft limit for portfolio clips
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 MB — matches typical Supabase free-plan file limit
 
 function isVideoFile(file: File): boolean {
   if (file.type.startsWith("video/")) return true;
@@ -227,13 +227,15 @@ export default function BuilderSettings() {
             const media = await compressProjectImage(file);
             const safeTitle =
               uploaded[index].title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+            const video = isVideoFile(file) || isVideoFile(media);
             let ext = "jpg";
             let contentType = media.type || "image/jpeg";
-            if (isVideoFile(media)) {
-              if (media.type.includes("webm") || media.name.toLowerCase().endsWith(".webm")) {
+            if (video) {
+              const name = (file.name || media.name || "").toLowerCase();
+              if (media.type.includes("webm") || name.endsWith(".webm")) {
                 ext = "webm";
                 contentType = "video/webm";
-              } else if (media.type.includes("quicktime") || media.name.toLowerCase().endsWith(".mov")) {
+              } else if (media.type.includes("quicktime") || name.endsWith(".mov")) {
                 ext = "mov";
                 contentType = "video/quicktime";
               } else {
@@ -255,15 +257,15 @@ export default function BuilderSettings() {
               });
             if (uploadError)
               throw new Error(
-                `Project media upload failed: ${uploadError.message}. Run the landing-assets storage migration first.`
+                `Project media upload failed: ${uploadError.message}. Check Supabase Storage size limits and that the landing-assets bucket exists.`
               );
             const { data: publicData } = sb.storage.from("landing-assets").getPublicUrl(path);
-            return { index, url: publicData.publicUrl };
+            return { index, url: publicData.publicUrl, mediaType: (video ? "video" : "image") as "video" | "image" };
           })
         );
         setUploadProgress("Uploading to storage…");
         for (const r of results) {
-          if (r) uploaded[r.index] = { ...uploaded[r.index], image: r.url };
+          if (r) uploaded[r.index] = { ...uploaded[r.index], image: r.url, mediaType: r.mediaType };
         }
         next = { ...next, projects: uploaded };
       }
@@ -387,7 +389,7 @@ export default function BuilderSettings() {
                   <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Portfolio manager</p>
                   <h2 className="font-display text-xl font-bold">Projects / Work</h2>
                   <p className="text-xs text-fog mt-1">
-                    Upload photos or short videos (MP4 / WebM / MOV). Images are compressed; videos upload as-is (max ~80&nbsp;MB). Preview appears instantly.
+                    Upload photos or short videos. Prefer <strong className="text-white">H.264 MP4</strong> (max ~50&nbsp;MB) — phone MOV/HEVC often won&apos;t play in Chrome. Images are compressed; videos upload as-is.
                   </p>
                 </div>
                 <button
