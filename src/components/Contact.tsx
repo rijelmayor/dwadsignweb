@@ -1,8 +1,5 @@
 import type { LandingSettings } from "@/lib/settings";
 
-const field =
-  "w-full rounded-xl border border-line bg-panel px-5 py-4 text-white placeholder:text-fog/60 focus:border-teal focus:ring-1 focus:ring-teal/30 outline-none transition";
-
 export default function Contact({
   contact,
   links,
@@ -22,11 +19,15 @@ export default function Contact({
           <div className="space-y-5 text-fog">
             <p>
               <span className="text-white font-semibold block text-sm mb-0.5">Phone</span>
-              {contact.phone}
+              <a href={`tel:${contact.phone.replace(/\s/g, "")}`} className="hover:text-gold transition">
+                {contact.phone}
+              </a>
             </p>
             <p>
               <span className="text-white font-semibold block text-sm mb-0.5">Email</span>
-              {contact.email}
+              <a href={`mailto:${contact.email}`} className="hover:text-gold transition">
+                {contact.email}
+              </a>
             </p>
             <p>
               <span className="text-white font-semibold block text-sm mb-0.5">Studio</span>
@@ -37,38 +38,44 @@ export default function Contact({
               {contact.hours}
             </p>
           </div>
-          <a
-            href={links.quoteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-10 inline-flex items-center gap-2 rounded-full border border-gold px-6 py-3 text-sm font-semibold text-gold hover:bg-gold hover:text-ink transition duration-300 hover:shadow-[0_0_28px_rgba(243,179,60,0.35)]"
-          >
-            Message us on Facebook
-            <span aria-hidden>→</span>
-          </a>
         </div>
-        <form
-          action={`mailto:${contact.email}`}
-          method="post"
-          encType="text/plain"
-          className="space-y-4 glass-panel rounded-3xl p-6 sm:p-8"
-        >
-          <input required name="name" placeholder="Your name" className={field} />
-          <input required name="email" placeholder="Email or phone" className={field} />
-          <textarea
-            required
-            name="message"
-            rows={5}
-            placeholder="Tell us about your project…"
-            className={`${field} resize-none`}
-          />
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-gold px-8 py-4 font-semibold text-ink hover:bg-gold-dim transition hover:shadow-[0_0_32px_rgba(243,179,60,0.4)]"
-          >
-            Send Message
-          </button>
-        </form>
+
+        {/* CTA panel — no form; quote builder + social stay primary */}
+        <div className="glass-panel rounded-3xl p-6 sm:p-8 flex flex-col justify-center gap-6">
+          <div>
+            <h3 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-white mb-2">
+              Ready for a quote?
+            </h3>
+            <p className="text-fog text-sm sm:text-base leading-relaxed">
+              Build your signage project online or message us directly — we&apos;ll get back to you fast.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <a
+              href="/quotebuilder"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gold px-6 py-4 font-semibold text-ink hover:bg-gold-dim transition hover:shadow-[0_0_32px_rgba(243,179,60,0.4)]"
+            >
+              Get a Quote
+              <span aria-hidden>→</span>
+            </a>
+            <a
+              href={links.facebook || links.quoteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-gold/60 px-6 py-4 text-sm font-semibold text-gold hover:bg-gold hover:text-ink transition duration-300 hover:shadow-[0_0_28px_rgba(243,179,60,0.35)]"
+            >
+              Message on Facebook
+            </a>
+          </div>
+
+          <p className="text-fog/70 text-xs sm:text-sm">
+            Prefer a call? Reach us at{" "}
+            <a href={`tel:${contact.phone.replace(/\s/g, "")}`} className="text-white hover:text-gold transition">
+              {contact.phone}
+            </a>
+          </p>
+        </div>
       </div>
     </section>
   );
