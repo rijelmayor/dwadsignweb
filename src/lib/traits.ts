@@ -4,9 +4,13 @@ export interface Traits {
   frameThickness: number;
   metal: "primer" | "powder" | "aluminum";
   light: "none" | "exposed" | "internal" | "halo" | "frontlit" | "rgb";
-  mount: "wall" | "bracket" | "pole" | "rooftop" | "hanging" | "raceway";
+  mount: "wall" | "bracket" | "pole" | "pole_single" | "rooftop" | "hanging" | "raceway";
   material: "acrylic" | "stainless";
   backing: "clear" | "black";
+  /** Face / box body color (hex) */
+  bodyColor?: string;
+  /** Depth / returns / side edges color (hex) */
+  returnColor?: string;
 }
 
 const has = (s: string, re: RegExp) => re.test(s.toLowerCase());

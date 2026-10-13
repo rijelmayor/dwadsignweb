@@ -225,6 +225,7 @@ function Plate({ pos, size, color = STEEL }: { pos: V3; size: V3; color?: string
 /** Extra height needed under the sign for freestanding mounts. */
 function belowFor(mount: Traits["mount"], h: number) {
   if (mount === "rooftop") return 1.4;
+  if (mount === "pole_single") return Math.max(1.8, h * 0.55);
   // hanging uses space above, not below — framing still needs room via camDist
   return 0;
 }
@@ -342,6 +343,36 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
     );
   }
 
+  if (mount === "pole_single") {
+    // Single vertical pole with sign hanging off the side (pylon / hanging on one pole)
+    const poleH = h + below + 0.4;
+    const poleX = -w / 2 - 0.18;
+    const poleBottom = bottom - below;
+    const poleTop = top + 0.25;
+    const poleMidY = (poleTop + poleBottom) / 2;
+    return (
+      <group>
+        {/* Ground pad */}
+        <mesh position={[poleX, poleBottom - 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.35, 0.4, 0.08, 20]} />
+          <meshStandardMaterial color="#9aa3ab" roughness={0.85} />
+        </mesh>
+        {/* Vertical pole */}
+        <mesh position={[poleX, poleMidY, 0]}>
+          <cylinderGeometry args={[0.07, 0.08, poleH, 16]} />
+          <meshStandardMaterial color="#5c656e" metalness={0.55} roughness={0.4} />
+        </mesh>
+        {/* Arms from pole to sign (hanging brackets) */}
+        <Strut a={[poleX + 0.08, top * 0.35, 0]} b={[-w / 2 + 0.02, top * 0.35, 0]} r={0.028} />
+        <Strut a={[poleX + 0.08, -h * 0.25, 0]} b={[-w / 2 + 0.02, -h * 0.25, 0]} r={0.028} />
+        <Plate pos={[poleX + 0.06, top * 0.35, 0]} size={[0.08, 0.16, 0.16]} />
+        <Plate pos={[-w / 2 - 0.02, top * 0.35, 0]} size={[0.05, 0.14, 0.14]} />
+        <Plate pos={[poleX + 0.06, -h * 0.25, 0]} size={[0.08, 0.16, 0.16]} />
+        <Plate pos={[-w / 2 - 0.02, -h * 0.25, 0]} size={[0.05, 0.14, 0.14]} />
+      </group>
+    );
+  }
+
   if (mount === "rooftop") {
     // All steel supports sit entirely BEHIND the sign (z <= back).
     const roofY = bottom - below;
@@ -412,13 +443,16 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   const ah = h - inset * 2;
   const dimOff = Math.max(0.28, Math.min(w, h) * 0.1);
   const dimFont = Math.max(0.12, Math.min(0.22, Math.min(w, h) * 0.055));
+  const bodyCol = traits.bodyColor || (isLightbox ? (variant === "acrylic" ? "#e3f4fb" : "#8f99a3") : look.color);
+  const returnCol = traits.returnColor || bodyCol;
+  const splitReturns = returnCol.toLowerCase() !== bodyCol.toLowerCase();
 
   const decor = (
     <>
       {isLightbox && (
         <mesh position={[0, 0, depth / 2 + 0.006]}>
           <planeGeometry args={[aw, ah]} />
-          <meshBasicMaterial color="#ffffff" />
+          <meshBasicMaterial color={bodyCol} />
         </mesh>
       )}
       <Artwork
@@ -436,7 +470,7 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
       {isLightbox ? (
         <RoundedBox args={[w, h, depth]} radius={0.02} castShadow receiveShadow>
           <meshStandardMaterial
-            color={variant === "acrylic" ? "#e3f4fb" : "#8f99a3"}
+            color={returnCol}
             transparent={variant === "acrylic"}
             opacity={variant === "acrylic" ? 0.62 : 1}
             metalness={variant === "acrylic" ? 0.05 : 0.55}
@@ -445,8 +479,15 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
         </RoundedBox>
       ) : (
         <RoundedBox args={[w, h, depth]} radius={0.008} castShadow receiveShadow>
-          <meshStandardMaterial color={look.color} roughness={look.roughness} metalness={look.metalness} />
+          <meshStandardMaterial color={returnCol} roughness={look.roughness} metalness={look.metalness} />
         </RoundedBox>
+      )}
+      {/* Front face panel when depth/returns color differs from body */}
+      {splitReturns && (
+        <mesh position={[0, 0, depth / 2 + 0.004]}>
+          <planeGeometry args={[w * 0.995, h * 0.995]} />
+          <meshStandardMaterial color={bodyCol} roughness={0.45} metalness={0.05} />
+        </mesh>
       )}
 
       {decor}
@@ -480,6 +521,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
   const isLightbox = service === "lightbox";
   const builtup = isLightbox && variant === "builtup";
   const acrylicLb = isLightbox && variant === "acrylic";
+  const bodyCol = traits.bodyColor || (acrylicLb ? "#fbfeff" : builtup ? "#ffffff" : look.color);
+  const returnCol = traits.returnColor || (builtup ? "#8f99a3" : acrylicLb ? "#e3f4fb" : look.color);
 
   const decor = (
     <>
@@ -487,11 +530,11 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
         <>
           <mesh position={[0, 0, depth / 2 + 0.004]}>
             <ringGeometry args={[faceR, r, 72]} />
-            <meshBasicMaterial color="#5f6a75" />
+            <meshBasicMaterial color={returnCol} />
           </mesh>
           <mesh position={[0, 0, depth / 2 + 0.006]}>
             <circleGeometry args={[faceR, 72]} />
-            <meshBasicMaterial color="#ffffff" />
+            <meshBasicMaterial color={bodyCol} />
           </mesh>
         </>
       )}
@@ -499,11 +542,11 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
         <>
           <mesh position={[0, 0, depth / 2 + 0.004]}>
             <ringGeometry args={[r * 0.985, r, 72]} />
-            <meshBasicMaterial color="#8fd3e6" />
+            <meshBasicMaterial color={returnCol} />
           </mesh>
           <mesh position={[0, 0, depth / 2 + 0.006]}>
             <circleGeometry args={[r * 0.985, 72]} />
-            <meshBasicMaterial color="#fbfeff" />
+            <meshBasicMaterial color={bodyCol} />
           </mesh>
         </>
       )}
@@ -522,19 +565,25 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
       {builtup && (
         <mesh rotation={rotX}>
           <cylinderGeometry args={[r, r, depth, 72]} />
-          <meshStandardMaterial color="#8f99a3" metalness={0.55} roughness={0.4} />
+          <meshStandardMaterial color={returnCol} metalness={0.55} roughness={0.4} />
         </mesh>
       )}
       {acrylicLb && (
         <mesh rotation={rotX}>
           <cylinderGeometry args={[r, r, depth, 72]} />
-          <meshStandardMaterial color="#e3f4fb" transparent opacity={0.62} roughness={0.12} metalness={0.05} />
+          <meshStandardMaterial color={returnCol} transparent opacity={0.62} roughness={0.12} metalness={0.05} />
         </mesh>
       )}
       {!isLightbox && (
         <mesh rotation={rotX}>
           <cylinderGeometry args={[r, r, depth, 72]} />
-          <meshStandardMaterial color={look.color} roughness={look.roughness} metalness={look.metalness} />
+          <meshStandardMaterial color={returnCol} roughness={look.roughness} metalness={look.metalness} />
+        </mesh>
+      )}
+      {!isLightbox && returnCol.toLowerCase() !== bodyCol.toLowerCase() && (
+        <mesh position={[0, 0, depth / 2 + 0.004]}>
+          <circleGeometry args={[r * 0.99, 64]} />
+          <meshStandardMaterial color={bodyCol} roughness={0.45} metalness={0.05} />
         </mesh>
       )}
 

@@ -15,8 +15,19 @@ const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false }
 type Shape = "rect" | "circle";
 type ServiceId = "panaflex" | "lightbox" | "acrylic" | "neon" | "apc" | "tarp" | "sticker" | "metal" | "custom";
 type LbBuild = "builtup" | "acrylic";
-type Mount = "wall" | "bracket" | "hanging" | "pole" | "rooftop";
+type Mount = "wall" | "bracket" | "hanging" | "pole" | "pole_single" | "rooftop";
 type Sides = "single" | "double";
+
+const BOX_COLORS: { id: string; label: string; hex: string }[] = [
+  { id: "white", label: "White", hex: "#ffffff" },
+  { id: "black", label: "Black", hex: "#1a1a1a" },
+  { id: "silver", label: "Silver", hex: "#c5ccd3" },
+  { id: "charcoal", label: "Charcoal", hex: "#3d4450" },
+  { id: "gold", label: "Gold", hex: "#c9a227" },
+  { id: "navy", label: "Navy", hex: "#0b1f3a" },
+  { id: "red", label: "Red", hex: "#b91c1c" },
+  { id: "teal", label: "Teal", hex: "#0d9488" },
+];
 
 interface LineItem {
   id: string;
@@ -86,6 +97,7 @@ const MOUNTING_LABELS: Record<string, string> = {
   bracket: "Side arm / projecting",
   hanging: "Hanging from ceiling",
   pole: "Pole bracket",
+  pole_single: "Single pole hanging",
   rooftop: "Rooftop legs (behind)",
 };
 
@@ -95,6 +107,7 @@ const MOUNTING_HELP: Record<string, string> = {
   bracket: "Blade / side arm sticks out from the wall (great for circle or box signs over the sidewalk).",
   hanging: "Suspended from the ceiling or soffit with rods/cables (like hanging lightboxes).",
   pole: "Clamps onto an existing pole — pole itself not included in the quote.",
+  pole_single: "One vertical pole with the sign hanging off the side (pylon / roadside style).",
   rooftop: "Steel legs behind the sign for roof or freestanding install.",
 };
 
@@ -131,6 +144,14 @@ function MountIcon({ id }: { id: Mount }) {
           <path d="M38 14 Q50 22 38 30" {...common} />
         </>
       )}
+      {id === "pole_single" && (
+        <>
+          {/* Single pole + sign hanging off side */}
+          <path d="M12 4 V40" {...common} strokeWidth={3} />
+          <path d="M12 14 H28 M12 28 H28" {...common} />
+          <rect x="28" y="10" width="20" height="24" rx="2" fill="currentColor" stroke="none" />
+        </>
+      )}
       {id === "rooftop" && (
         <>
           <path d="M4 41 H52" {...common} strokeWidth={3} />
@@ -163,6 +184,8 @@ export default function QuoteBuilder() {
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
   const [mounting, setMounting] = useState<Mount>("wall");
+  const [bodyColor, setBodyColor] = useState("#ffffff");
+  const [returnColor, setReturnColor] = useState("#1a1a1a");
   const [note, setNote] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
@@ -240,7 +263,9 @@ export default function QuoteBuilder() {
     mount: mounting,
     material: serviceId === "metal" ? "stainless" : "acrylic",
     backing: "clear",
-  }), [thicknessIn, isLightbox, lit, mounting, serviceId]);
+    bodyColor,
+    returnColor,
+  }), [thicknessIn, isLightbox, lit, mounting, serviceId, bodyColor, returnColor]);
 
   const live = useMemo(() => {
     const markup = 1 + qs.markupPct / 100;
@@ -313,7 +338,7 @@ export default function QuoteBuilder() {
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, areaSqft, qty,
-      face: `${faceLabel} · ${sidesLabel}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
+      face: `${faceLabel} · ${sidesLabel} · face ${BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor} / depth ${BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
       breakdown: {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
@@ -797,7 +822,7 @@ export default function QuoteBuilder() {
                 <label className={labelCls}>How does it attach?</label>
                 <p className="text-[11px] text-fog mb-2">Pick the style that matches the job — works for rectangle and circle.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(["wall", "bracket", "hanging", "pole", "rooftop"] as Mount[]).map((id) => (
+                  {(["wall", "bracket", "hanging", "pole", "pole_single", "rooftop"] as Mount[]).map((id) => (
                     <button
                       key={id}
                       type="button"
@@ -818,6 +843,47 @@ export default function QuoteBuilder() {
                   )}
                 </p>
               </div>
+
+              {/* Box + depth colors */}
+              <div>
+                <label className={labelCls}>Box / face color</label>
+                <p className="text-[11px] text-fog mb-2">Front of the sign (what people see).</p>
+                <div className="flex flex-wrap gap-2">
+                  {BOX_COLORS.map((c) => (
+                    <button
+                      key={`body-${c.id}`}
+                      type="button"
+                      title={c.label}
+                      onClick={() => setBodyColor(c.hex)}
+                      className={`w-9 h-9 rounded-full border-2 transition ${
+                        bodyColor.toLowerCase() === c.hex.toLowerCase() ? "border-gold ring-2 ring-gold/40 scale-110" : "border-white/30 hover:border-white/60"
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
+                </div>
+                <p className="text-[10px] text-fog mt-1">{BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor}</p>
+              </div>
+              <div>
+                <label className={labelCls}>Depth / returns color</label>
+                <p className="text-[11px] text-fog mb-2">Sides of the box (clients often want black or white depth).</p>
+                <div className="flex flex-wrap gap-2">
+                  {BOX_COLORS.map((c) => (
+                    <button
+                      key={`ret-${c.id}`}
+                      type="button"
+                      title={c.label}
+                      onClick={() => setReturnColor(c.hex)}
+                      className={`w-9 h-9 rounded-full border-2 transition ${
+                        returnColor.toLowerCase() === c.hex.toLowerCase() ? "border-gold ring-2 ring-gold/40 scale-110" : "border-white/30 hover:border-white/60"
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
+                </div>
+                <p className="text-[10px] text-fog mt-1">{BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}</p>
+              </div>
+
               <div className="flex justify-between pt-1 gap-2">
                 <button type="button" onClick={() => setBuildStep(3)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
                 <button type="button" onClick={() => setBuildStep(5)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Logo →</button>
