@@ -56,6 +56,19 @@ interface LineItem {
 
 interface ClientInfo { name: string; company: string; email: string; phone: string; project: string }
 
+interface DraftRow {
+  id: string;
+  quote_no: string;
+  draftName: string;
+  created_at: string;
+  grand: number;
+  itemCount: number;
+  source: "supabase" | "local";
+  raw?: { client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown> };
+}
+
+const LOCAL_DRAFTS_KEY = "dw_quote_drafts_v1";
+
 const LB_MAX_FT = 3;
 
 interface ServiceDef {
@@ -184,6 +197,8 @@ export default function QuoteBuilder() {
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
   const [mounting, setMounting] = useState<Mount>("wall");
+  /** 1 = single arm, 2 = double arm (bracket / hanging / pole / pole_single) */
+  const [armCount, setArmCount] = useState<1 | 2>(1);
   const [bodyColor, setBodyColor] = useState("#ffffff");
   const [returnColor, setReturnColor] = useState("#1a1a1a");
   const [note, setNote] = useState("");
@@ -197,6 +212,13 @@ export default function QuoteBuilder() {
   const [exporting, setExporting] = useState(false);
   const [msg, setMsg] = useState("");
   const [supabaseOk, setSupabaseOk] = useState<boolean | null>(null);
+  /** Draft filename the user chooses for later edit */
+  const [draftName, setDraftName] = useState("");
+  /** When set, Save updates this draft instead of creating a new one */
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [showDrafts, setShowDrafts] = useState(false);
+  const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
   /** Site photo of the real location + where the sign will be placed */
   const [sitePhoto, setSitePhoto] = useState<string>("");
   const [placementType, setPlacementType] = useState<"storefront" | "wall" | "bracket" | "pole" | "rooftop" | "other">("wall");
@@ -250,10 +272,11 @@ export default function QuoteBuilder() {
   const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
   const variant = isLightbox ? lbBuild : "panaflex";
 
-  // Pole bracket only (no pole in the quotation): circle = 1 bracket; rectangle = 2 when large, else 1.
-  const bracketCount = isCircle ? 1 : Math.max(width, height) >= 3 ? 2 : 1;
-  const mountingText = mounting === "pole"
-    ? `Pole bracket · ${bracketCount} bracket${bracketCount > 1 ? "s" : ""}`
+  // Arms / brackets: user chooses 1 or 2 for supported mounts; default single for small circles
+  const needsArms = mounting === "bracket" || mounting === "hanging" || mounting === "pole" || mounting === "pole_single";
+  const bracketCount = needsArms ? armCount : 1;
+  const mountingText = needsArms
+    ? `${MOUNTING_LABELS[mounting]} · ${armCount === 1 ? "single arm" : "double arm"}`
     : MOUNTING_LABELS[mounting];
 
   const traits = useMemo<Traits>(() => ({
@@ -296,7 +319,10 @@ export default function QuoteBuilder() {
 
   const pickShape = (next: Shape) => {
     setShape(next);
-    if (next === "circle" && def.circleMaxFt) setDiameter((d) => Math.min(d, def.circleMaxFt!));
+    if (next === "circle") {
+      if (def.circleMaxFt) setDiameter((d) => Math.min(d, def.circleMaxFt!));
+      setArmCount(1); // small round signs default to single arm
+    }
   };
   const pickService = (id: ServiceId) => {
     const nextDef = SERVICES.find((x) => x.id === id) ?? SERVICES[0];
@@ -355,17 +381,196 @@ export default function QuoteBuilder() {
   const grand = afterDisc + vat;
   const quoteNo = `${qs.quotePrefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(lines.length || 1).padStart(2, "0")}`;
 
+  const readLocalDrafts = (): DraftRow[] => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw) as Array<{
+        id: string; quote_no: string; draftName: string; created_at: string;
+        client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown>;
+      }>;
+      return arr.map((d) => ({
+        id: d.id,
+        quote_no: d.quote_no,
+        draftName: d.draftName || d.quote_no,
+        created_at: d.created_at,
+        grand: Number((d.totals as { grand?: number })?.grand ?? 0),
+        itemCount: d.lines?.length ?? 0,
+        source: "local" as const,
+        raw: { client: d.client, lines: d.lines, totals: d.totals },
+      }));
+    } catch {
+      return [];
+    }
+  };
+
+  const writeLocalDraft = (entry: {
+    id: string; quote_no: string; draftName: string; created_at: string;
+    client: ClientInfo; lines: LineItem[]; totals: Record<string, unknown>;
+  }) => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
+      const arr = raw ? (JSON.parse(raw) as typeof entry[]) : [];
+      const idx = arr.findIndex((x) => x.id === entry.id);
+      if (idx >= 0) arr[idx] = entry;
+      else arr.unshift(entry);
+      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(arr.slice(0, 40)));
+    } catch { /* ignore quota */ }
+  };
+
+  const deleteLocalDraft = (id: string) => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw) as { id: string }[];
+      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(arr.filter((x) => x.id !== id)));
+    } catch { /* ignore */ }
+  };
+
+  const loadDrafts = useCallback(async () => {
+    setLoadingDrafts(true);
+    const local = readLocalDrafts();
+    const sb = createClient();
+    if (!sb) {
+      setDrafts(local);
+      setLoadingDrafts(false);
+      return;
+    }
+    const { data, error } = await sb
+      .from("quotes")
+      .select("id, quote_no, client, lines, totals, status, created_at")
+      .eq("status", "draft")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (error) {
+      setMsg(`Could not load drafts: ${error.message}`);
+      setDrafts(local);
+      setLoadingDrafts(false);
+      return;
+    }
+    const remote: DraftRow[] = (data ?? []).map((row) => {
+      const totals = (row.totals ?? {}) as Record<string, unknown>;
+      const linesArr = (row.lines ?? []) as LineItem[];
+      return {
+        id: row.id as string,
+        quote_no: row.quote_no as string,
+        draftName: String(totals.draftName || row.quote_no),
+        created_at: row.created_at as string,
+        grand: Number(totals.grand ?? 0),
+        itemCount: linesArr.length,
+        source: "supabase" as const,
+        raw: { client: row.client as ClientInfo, lines: linesArr, totals },
+      };
+    });
+    // Merge local-only drafts (not in remote)
+    const remoteIds = new Set(remote.map((r) => r.id));
+    setDrafts([...remote, ...local.filter((l) => !remoteIds.has(l.id))]);
+    setLoadingDrafts(false);
+  }, []);
+
+  const openDraft = (d: DraftRow) => {
+    const linesArr = d.raw?.lines ?? [];
+    const totals = d.raw?.totals ?? {};
+    setLines(linesArr);
+    setDiscount(Number(totals.discount ?? 0));
+    setPreparedBy(String(totals.preparedBy ?? ""));
+    setDraftName(d.draftName);
+    setEditingDraftId(d.id);
+    setShowDrafts(false);
+    setMsg(`Opened draft “${d.draftName}” — edit then Save to update.`);
+    setTimeout(() => setMsg(""), 3500);
+  };
+
+  const deleteDraft = async (d: DraftRow) => {
+    if (!confirm(`Delete draft “${d.draftName}”?`)) return;
+    if (d.source === "local") {
+      deleteLocalDraft(d.id);
+    } else {
+      const sb = createClient();
+      if (sb) await sb.from("quotes").delete().eq("id", d.id);
+    }
+    if (editingDraftId === d.id) setEditingDraftId(null);
+    setDrafts((prev) => prev.filter((x) => x.id !== d.id));
+    setMsg("Draft deleted.");
+    setTimeout(() => setMsg(""), 2000);
+  };
+
   const saveQuote = useCallback(async () => {
-    setSaving(true); setMsg(""); const sb = createClient();
-    if (!sb) { setMsg("Supabase is not configured."); setSaving(false); return; }
-    const payload = {
-      quote_no: quoteNo, client,
-      lines: lines.map((l) => ({ ...l, amount: l.unitCost * l.qty })),
-      totals: { sub: subtotal, discount, vat, grand, preparedBy, preparedByTitle: qs.preparedByTitle }, status: "draft",
+    setSaving(true);
+    setMsg("");
+    if (lines.length === 0) {
+      setMsg("Add at least one sign before saving.");
+      setSaving(false);
+      return;
+    }
+    const name = draftName.trim();
+    if (!name) {
+      setMsg("Enter a draft name (filename) so you can find and edit it later.");
+      setSaving(false);
+      setShowDrafts(true);
+      return;
+    }
+    const totals = {
+      sub: subtotal,
+      discount,
+      vat,
+      grand,
+      preparedBy,
+      preparedByTitle: qs.preparedByTitle,
+      draftName: name,
     };
-    const { error } = await sb.from("quotes").insert(payload);
-    setMsg(error ? `Save failed: ${error.message}` : "Saved to Supabase ✓"); setSaving(false);
-  }, [quoteNo, client, lines, subtotal, discount, vat, grand, preparedBy, qs.preparedByTitle]);
+    const linePayload = lines.map((l) => ({ ...l, amount: l.unitCost * l.qty }));
+    const sb = createClient();
+
+    if (sb) {
+      if (editingDraftId) {
+        const { error } = await sb
+          .from("quotes")
+          .update({
+            quote_no: quoteNo,
+            client,
+            lines: linePayload,
+            totals,
+            status: "draft",
+          })
+          .eq("id", editingDraftId);
+        setMsg(error ? `Update failed: ${error.message}` : `Updated draft “${name}”.`);
+      } else {
+        const { data, error } = await sb
+          .from("quotes")
+          .insert({
+            quote_no: quoteNo,
+            client,
+            lines: linePayload,
+            totals,
+            status: "draft",
+          })
+          .select("id")
+          .single();
+        if (error) setMsg(`Save failed: ${error.message}`);
+        else {
+          if (data?.id) setEditingDraftId(data.id as string);
+          setMsg(`Saved draft “${name}”. Open Drafts anytime to edit.`);
+        }
+      }
+    } else {
+      // Local-only fallback
+      const id = editingDraftId || crypto.randomUUID();
+      writeLocalDraft({
+        id,
+        quote_no: quoteNo,
+        draftName: name,
+        created_at: new Date().toISOString(),
+        client,
+        lines: linePayload,
+        totals,
+      });
+      setEditingDraftId(id);
+      setMsg(`Saved draft “${name}” on this device (offline).`);
+    }
+    setSaving(false);
+    setTimeout(() => setMsg(""), 4000);
+  }, [quoteNo, client, lines, subtotal, discount, vat, grand, preparedBy, qs.preparedByTitle, draftName, editingDraftId]);
 
   const downloadImage = useCallback(async (format: "png" | "jpeg") => {
     const el = quoteSheetRef.current;
@@ -524,6 +729,13 @@ export default function QuoteBuilder() {
                 {lines.length} item{lines.length > 1 ? "s" : ""} · <strong className="text-gold">₱{fmt(grand)}</strong>
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => { setShowDrafts((v) => !v); if (!showDrafts) loadDrafts(); }}
+              className="rounded-full border border-line px-3 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white"
+            >
+              {showDrafts ? "Close drafts" : "My drafts"}
+            </button>
             <Link href="/buildersettings" className="rounded-full border border-line px-3 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">
               Settings
             </Link>
@@ -538,6 +750,67 @@ export default function QuoteBuilder() {
       </header>
 
       <main className="mx-auto max-w-[1600px] p-4 lg:p-6 space-y-6">
+        {/* Drafts panel */}
+        {showDrafts && (
+          <div className="no-export rounded-2xl border border-line bg-panel p-4 text-white space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-lg font-bold">My drafts</h2>
+                <p className="text-xs text-fog">Open a draft to edit, or name this quote before saving.</p>
+              </div>
+              <button type="button" onClick={loadDrafts} className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-fog hover:text-white">
+                {loadingDrafts ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-[10px] font-bold tracking-wider uppercase text-fog mb-1">Draft name (filename for later edit)</label>
+                <input
+                  className="w-full rounded-xl border border-line bg-ink/40 px-3 py-2 text-sm text-white placeholder:text-fog/50 outline-none focus:border-teal"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  placeholder="e.g. ABC Storefront April, Juan circle lightbox"
+                />
+              </div>
+              {editingDraftId && (
+                <button
+                  type="button"
+                  onClick={() => { setEditingDraftId(null); setDraftName(""); setMsg("New draft mode — save will create a new entry."); }}
+                  className="rounded-full border border-line px-3 py-2 text-xs text-fog hover:text-white"
+                >
+                  Clear edit (new)
+                </button>
+              )}
+            </div>
+            {editingDraftId && (
+              <p className="text-[11px] text-teal">Editing existing draft — Save will update it.</p>
+            )}
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-line divide-y divide-line">
+              {loadingDrafts && <p className="p-3 text-xs text-fog">Loading drafts…</p>}
+              {!loadingDrafts && drafts.length === 0 && (
+                <p className="p-3 text-xs text-fog">No drafts yet. Build a quote, type a name, then Save draft.</p>
+              )}
+              {drafts.map((d) => (
+                <div key={d.id} className="flex flex-wrap items-center gap-2 px-3 py-2 hover:bg-ink/40">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{d.draftName}</p>
+                    <p className="text-[10px] text-fog">
+                      {d.quote_no} · {d.itemCount} item{d.itemCount !== 1 ? "s" : ""} · ₱{fmt(d.grand)} · {new Date(d.created_at).toLocaleDateString()}
+                      {d.source === "local" ? " · this device" : ""}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => openDraft(d)} className="rounded-full bg-gold text-ink px-3 py-1.5 text-xs font-bold">
+                    Open / edit
+                  </button>
+                  <button type="button" onClick={() => deleteDraft(d)} className="rounded-full border border-line px-3 py-1.5 text-xs text-red-400 hover:border-red-400">
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* TOP: Builder (left, one step at a time) + live 3D (right, always full) */}
         <div className="grid lg:grid-cols-[minmax(320px,0.85fr)_minmax(480px,1.15fr)] gap-6 items-start">
           {/* LEFT — wizard controls */}
@@ -838,10 +1111,37 @@ export default function QuoteBuilder() {
                 </div>
                 <p className="mt-2 text-[11px] text-fog leading-snug rounded-lg bg-ink/40 border border-line px-3 py-2">
                   {MOUNTING_HELP[mounting]}
-                  {mounting === "pole" && (
-                    <> {isCircle ? "Circle uses 1 bracket." : "Rectangle: 1 bracket if small, 2 if 3 ft or larger."} Using {bracketCount}.</>
-                  )}
                 </p>
+                {needsArms && (
+                  <div className="mt-3">
+                    <label className={labelCls}>Arms / supports</label>
+                    <p className="text-[11px] text-fog mb-2">
+                      Small round signs usually use <strong className="text-white">single arm</strong>. Larger boxes often need two.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setArmCount(1)}
+                        className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                          armCount === 1 ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold">Single arm</span>
+                        <span className="block text-[11px] opacity-80">One support — good for small Ø / light signs</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setArmCount(2)}
+                        className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                          armCount === 2 ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold">Double arm</span>
+                        <span className="block text-[11px] opacity-80">Two supports — steadier for larger signs</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Box + depth colors */}
@@ -1137,15 +1437,9 @@ export default function QuoteBuilder() {
           className="quote-sheet mx-auto w-full max-w-[240mm] rounded-2xl border border-gray-300 bg-white text-ink overflow-hidden shadow-lg font-sans"
           style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
         >
-          {/* Friendly header */}
+          {/* Friendly header — logo only (dwlogo already has company name) */}
           <div className="bg-[#011424] text-white px-5 py-3.5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Image src="/dwlogo.png" alt="Delight Works" width={200} height={48} className="h-9 w-auto object-contain" />
-              <div>
-                <p className="font-bold text-base leading-tight">Delight Works</p>
-                <p className="text-[10px] text-fog tracking-wide">{site.descriptor}</p>
-              </div>
-            </div>
+            <Image src="/dwlogo.png" alt="Delight Works Advertising Signages" width={220} height={52} className="h-10 w-auto object-contain" />
             <div className="text-center flex-1 hidden sm:block">
               <p className="text-[10px] uppercase tracking-[0.15em] text-fog">Sign proposal</p>
               <p className="font-bold text-gold text-lg leading-tight">{quoteNo}</p>
@@ -1327,18 +1621,38 @@ export default function QuoteBuilder() {
             </div>
           </div>
 
-          <div className="no-export px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 bg-gray-50">
-            <p className="text-xs text-gray-500">Download and send via chat / email — no print needed.</p>
-            <div className="flex flex-wrap gap-2">
-              <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gray-300 px-5 py-2.5 text-sm font-bold text-ink hover:bg-white disabled:opacity-50">
-                Download JPG
-              </button>
-              <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-5 py-2.5 text-sm font-bold hover:bg-gold-dim disabled:opacity-50">
-                {exporting ? "Exporting…" : "Download PNG"}
-              </button>
-              <button disabled={saving} onClick={saveQuote} className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50">
-                {saving ? "Saving…" : "Save"}
-              </button>
+          <div className="no-export px-4 py-3 border-t border-gray-100 bg-gray-50 space-y-2">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[180px]">
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-0.5">Draft name</label>
+                <input
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  placeholder="Name this quote to find it later"
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 pb-1.5">
+                {editingDraftId ? "Will update existing draft" : "New draft"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-gray-500">Download = send to client. Save draft = edit later via My drafts.</p>
+              <div className="flex flex-wrap gap-2">
+                <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gray-300 px-5 py-2.5 text-sm font-bold text-ink hover:bg-white disabled:opacity-50">
+                  Download JPG
+                </button>
+                <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-5 py-2.5 text-sm font-bold hover:bg-gold-dim disabled:opacity-50">
+                  {exporting ? "Exporting…" : "Download PNG"}
+                </button>
+                <button
+                  disabled={saving || lines.length === 0}
+                  onClick={saveQuote}
+                  className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : editingDraftId ? "Update draft" : "Save draft"}
+                </button>
+              </div>
             </div>
           </div>
         </section>

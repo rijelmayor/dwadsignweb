@@ -278,41 +278,35 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
   }
 
   if (mount === "bracket") {
-    // Side-projecting / blade arm (like round shop signs on a wall arm)
+    // Side-projecting / blade arm — brackets prop = 1 (single) or 2 (double)
     const armLen = Math.max(0.55, Math.min(w, h) * 0.35);
     const wallX = -w / 2 - armLen;
-    const armY = 0;
+    const n = Math.max(1, Math.min(2, Math.round(brackets)));
+    const armYs = n === 1 ? [0] : [h * 0.22, -h * 0.22];
     return (
       <group>
-        {/* Wall plane to the left */}
         <mesh position={[wallX - 0.12, 0, 0]}>
           <boxGeometry args={[0.24, bigH, bigW * 0.5]} />
           <meshStandardMaterial color="#e8eaed" roughness={0.92} />
         </mesh>
-        {/* Horizontal arm from wall to sign edge */}
-        <Strut a={[wallX, armY, 0]} b={[-w / 2 + 0.02, armY, 0]} r={0.04} />
-        {/* Wall plate */}
-        <Plate pos={[wallX + 0.02, armY, 0]} size={[0.06, 0.28, 0.28]} />
-        {/* Sign-side plate */}
-        <Plate pos={[-w / 2 - 0.02, armY, 0]} size={[0.05, 0.22, 0.22]} />
-        {/* Optional second arm for taller signs */}
-        {h >= 2.5 && (
-          <>
-            <Strut a={[wallX, armY + h * 0.22, 0]} b={[-w / 2 + 0.02, armY + h * 0.22, 0]} r={0.032} />
-            <Strut a={[wallX, armY - h * 0.22, 0]} b={[-w / 2 + 0.02, armY - h * 0.22, 0]} r={0.032} />
-          </>
-        )}
+        {armYs.map((armY) => (
+          <group key={armY}>
+            <Strut a={[wallX, armY, 0]} b={[-w / 2 + 0.02, armY, 0]} r={n === 1 ? 0.04 : 0.032} />
+            <Plate pos={[wallX + 0.02, armY, 0]} size={[0.06, 0.28, 0.28]} />
+            <Plate pos={[-w / 2 - 0.02, armY, 0]} size={[0.05, 0.22, 0.22]} />
+          </group>
+        ))}
       </group>
     );
   }
 
   if (mount === "hanging") {
-    // Ceiling / soffit hang with two rods or cables (lightbox hanging style)
+    // Ceiling hang — 1 or 2 rods from brackets prop
     const cableTop = top + Math.max(0.7, h * 0.35);
-    const xs = w > 1.2 ? [-w * 0.32, w * 0.32] : [0];
+    const n = Math.max(1, Math.min(2, Math.round(brackets)));
+    const xs = n === 1 ? [0] : (w > 0.8 ? [-w * 0.32, w * 0.32] : [-0.2, 0.2]);
     return (
       <group>
-        {/* Ceiling slab */}
         <mesh position={[0, cableTop + 0.08, 0]}>
           <boxGeometry args={[Math.max(w * 1.4, 2), 0.12, Math.max(depth * 3, 1.2)]} />
           <meshStandardMaterial color="#e8eaed" roughness={0.9} />
@@ -344,31 +338,31 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
   }
 
   if (mount === "pole_single") {
-    // Single vertical pole with sign hanging off the side (pylon / hanging on one pole)
+    // Single vertical pole — 1 or 2 arms from brackets prop
     const poleH = h + below + 0.4;
     const poleX = -w / 2 - 0.18;
     const poleBottom = bottom - below;
     const poleTop = top + 0.25;
     const poleMidY = (poleTop + poleBottom) / 2;
+    const n = Math.max(1, Math.min(2, Math.round(brackets)));
+    const armYs = n === 1 ? [0] : [h * 0.28, -h * 0.28];
     return (
       <group>
-        {/* Ground pad */}
         <mesh position={[poleX, poleBottom - 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.35, 0.4, 0.08, 20]} />
           <meshStandardMaterial color="#9aa3ab" roughness={0.85} />
         </mesh>
-        {/* Vertical pole */}
         <mesh position={[poleX, poleMidY, 0]}>
           <cylinderGeometry args={[0.07, 0.08, poleH, 16]} />
           <meshStandardMaterial color="#5c656e" metalness={0.55} roughness={0.4} />
         </mesh>
-        {/* Arms from pole to sign (hanging brackets) */}
-        <Strut a={[poleX + 0.08, top * 0.35, 0]} b={[-w / 2 + 0.02, top * 0.35, 0]} r={0.028} />
-        <Strut a={[poleX + 0.08, -h * 0.25, 0]} b={[-w / 2 + 0.02, -h * 0.25, 0]} r={0.028} />
-        <Plate pos={[poleX + 0.06, top * 0.35, 0]} size={[0.08, 0.16, 0.16]} />
-        <Plate pos={[-w / 2 - 0.02, top * 0.35, 0]} size={[0.05, 0.14, 0.14]} />
-        <Plate pos={[poleX + 0.06, -h * 0.25, 0]} size={[0.08, 0.16, 0.16]} />
-        <Plate pos={[-w / 2 - 0.02, -h * 0.25, 0]} size={[0.05, 0.14, 0.14]} />
+        {armYs.map((ay) => (
+          <group key={ay}>
+            <Strut a={[poleX + 0.08, ay, 0]} b={[-w / 2 + 0.02, ay, 0]} r={0.028} />
+            <Plate pos={[poleX + 0.06, ay, 0]} size={[0.08, 0.16, 0.16]} />
+            <Plate pos={[-w / 2 - 0.02, ay, 0]} size={[0.05, 0.14, 0.14]} />
+          </group>
+        ))}
       </group>
     );
   }
