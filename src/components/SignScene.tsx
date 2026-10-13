@@ -18,6 +18,8 @@ export interface SignSceneHandle {
   /** Angled 3D perspective view with all dimension lines */
   captureIso: () => string | null;
   capturePng: () => string | null;
+  /** Iso with transparent background — for site photo overlay */
+  captureIsoClear: () => string | null;
 }
 
 interface SignSceneProps {
@@ -132,6 +134,10 @@ function LogoFace({ w, h, depth, logoUrl, circle = false }: { w: number; h: numb
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.anisotropy = 8;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = true;
     texture.needsUpdate = true;
   }, [texture]);
   return (
@@ -219,6 +225,7 @@ function Plate({ pos, size, color = STEEL }: { pos: V3; size: V3; color?: string
 /** Extra height needed under the sign for freestanding mounts. */
 function belowFor(mount: Traits["mount"], h: number) {
   if (mount === "rooftop") return 1.4;
+  // hanging uses space above, not below — framing still needs room via camDist
   return 0;
 }
 
@@ -257,38 +264,65 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
   const bigW = Math.max(w, 2) * 4;
   const bigH = Math.max(h, 2) * 4;
   const bottom = -h / 2;
+  const top = h / 2;
 
   if (mount === "wall") {
-    // Flush against the wall
+    // Flush against the wall — light wall so it doesn’t gray out the scene
     return (
-      <mesh position={[0, 0, back - 0.004 - 0.15]}>
-        <boxGeometry args={[bigW, bigH, 0.3]} />
-        <meshStandardMaterial color={WALL} roughness={0.95} />
+      <mesh position={[0, 0, back - 0.004 - 0.12]}>
+        <boxGeometry args={[bigW, bigH, 0.24]} />
+        <meshStandardMaterial color="#e8eaed" roughness={0.92} />
       </mesh>
     );
   }
 
   if (mount === "bracket") {
-    const standoff = 0.5;
-    const wallFront = back - standoff;
-    const xs = w >= 3 ? [-w * 0.32, w * 0.32] : [0];
-    const ys = h >= 3.5 ? [-h * 0.28, h * 0.28] : [0];
+    // Side-projecting / blade arm (like round shop signs on a wall arm)
+    const armLen = Math.max(0.55, Math.min(w, h) * 0.35);
+    const wallX = -w / 2 - armLen;
+    const armY = 0;
     return (
       <group>
-        <mesh position={[0, 0, wallFront - 0.15]}>
-          <boxGeometry args={[bigW, bigH, 0.3]} />
-          <meshStandardMaterial color={WALL} roughness={0.95} />
+        {/* Wall plane to the left */}
+        <mesh position={[wallX - 0.12, 0, 0]}>
+          <boxGeometry args={[0.24, bigH, bigW * 0.5]} />
+          <meshStandardMaterial color="#e8eaed" roughness={0.92} />
         </mesh>
-        {xs.flatMap((x) =>
-          ys.map((y) => (
-            <group key={`${x}_${y}`}>
-              <Strut a={[x, y, back]} b={[x, y, wallFront]} r={0.045} />
-              <Plate pos={[x, y, wallFront + 0.02]} size={[0.3, 0.3, 0.04]} />
-              <Plate pos={[x, y, back - 0.02]} size={[0.26, 0.26, 0.04]} />
-              <Strut a={[x, y - 0.32, wallFront + 0.02]} b={[x, y, back - 0.14]} r={0.03} />
-            </group>
-          )),
+        {/* Horizontal arm from wall to sign edge */}
+        <Strut a={[wallX, armY, 0]} b={[-w / 2 + 0.02, armY, 0]} r={0.04} />
+        {/* Wall plate */}
+        <Plate pos={[wallX + 0.02, armY, 0]} size={[0.06, 0.28, 0.28]} />
+        {/* Sign-side plate */}
+        <Plate pos={[-w / 2 - 0.02, armY, 0]} size={[0.05, 0.22, 0.22]} />
+        {/* Optional second arm for taller signs */}
+        {h >= 2.5 && (
+          <>
+            <Strut a={[wallX, armY + h * 0.22, 0]} b={[-w / 2 + 0.02, armY + h * 0.22, 0]} r={0.032} />
+            <Strut a={[wallX, armY - h * 0.22, 0]} b={[-w / 2 + 0.02, armY - h * 0.22, 0]} r={0.032} />
+          </>
         )}
+      </group>
+    );
+  }
+
+  if (mount === "hanging") {
+    // Ceiling / soffit hang with two rods or cables (lightbox hanging style)
+    const cableTop = top + Math.max(0.7, h * 0.35);
+    const xs = w > 1.2 ? [-w * 0.32, w * 0.32] : [0];
+    return (
+      <group>
+        {/* Ceiling slab */}
+        <mesh position={[0, cableTop + 0.08, 0]}>
+          <boxGeometry args={[Math.max(w * 1.4, 2), 0.12, Math.max(depth * 3, 1.2)]} />
+          <meshStandardMaterial color="#e8eaed" roughness={0.9} />
+        </mesh>
+        {xs.map((x) => (
+          <group key={x}>
+            <Strut a={[x, top + 0.02, 0]} b={[x, cableTop, 0]} r={0.018} color="#333" />
+            <Plate pos={[x, top + 0.02, 0]} size={[0.12, 0.04, 0.12]} />
+            <Plate pos={[x, cableTop - 0.02, 0]} size={[0.14, 0.04, 0.14]} />
+          </group>
+        ))}
       </group>
     );
   }
@@ -519,7 +553,13 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
   );
 }
 
-type CaptureApi = { captureFront: () => string | null; captureSide: () => string | null; captureIso: () => string | null };
+type CaptureApi = {
+  captureFront: () => string | null;
+  captureSide: () => string | null;
+  captureIso: () => string | null;
+  /** Iso PNG with transparent background — for placing on site photos */
+  captureIsoClear: () => string | null;
+};
 
 function CaptureController({ camDist, onReady }: { camDist: number; onReady: (api: CaptureApi) => void }) {
   const { gl, scene, camera } = useThree();
@@ -528,15 +568,34 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
     const faceCamera = () => {
       scene.traverse((o) => { if (o.userData?.faceCam) o.quaternion.copy(camera.quaternion); });
     };
-    const shot = (x: number, y: number, z: number): string | null => {
+    const shot = (x: number, y: number, z: number, clearBg = false): string | null => {
       try {
         const prev = camera.position.clone();
+        const prevClear = gl.getClearColor(new THREE.Color());
+        const prevAlpha = gl.getClearAlpha();
         camera.position.set(x, y, z);
         camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
         faceCamera();
+        if (clearBg) {
+          gl.setClearColor(0x000000, 0);
+          // Hide ground/environment if any — scene background null
+          const prevBg = scene.background;
+          scene.background = null;
+          gl.render(scene, camera);
+          const data = gl.domElement.toDataURL("image/png");
+          scene.background = prevBg;
+          gl.setClearColor(prevClear, prevAlpha);
+          camera.position.copy(prev);
+          camera.lookAt(0, 0, 0);
+          camera.updateMatrixWorld();
+          faceCamera();
+          gl.render(scene, camera);
+          return data;
+        }
         gl.render(scene, camera);
-        const data = gl.domElement.toDataURL("image/jpeg", 0.92);
+        // High-quality PNG for crisp quote sheet
+        const data = gl.domElement.toDataURL("image/png");
         camera.position.copy(prev);
         camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
@@ -551,6 +610,7 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
       captureFront: () => shot(0, 0, camDist),
       captureSide: () => shot(camDist, 0, 0),
       captureIso: () => shot(camDist * 0.62, camDist * 0.34, camDist * 0.86),
+      captureIsoClear: () => shot(camDist * 0.55, camDist * 0.22, camDist * 0.78, true),
     });
   }, [gl, scene, camera, camDist, onReady]);
 
@@ -573,6 +633,7 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
     captureSide: () => apiRef.current?.captureSide() ?? null,
     captureIso: () => apiRef.current?.captureIso() ?? null,
     capturePng: () => apiRef.current?.captureIso() ?? null,
+    captureIsoClear: () => apiRef.current?.captureIsoClear() ?? null,
   }));
 
   const thickness = Math.round((props.traits.frameThickness || 0.12) * 12 * 10) / 10;
@@ -581,15 +642,22 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
   const chip = "rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm";
 
   return (
-    <div className="w-full h-full min-h-[400px] rounded-xl overflow-hidden bg-[#f0f3f6] border border-line relative">
+    <div className="w-full h-full min-h-[400px] rounded-xl overflow-hidden bg-white border border-line relative">
       <Canvas
-        camera={{ position: [camDist * 0.28, camDist * 0.1, camDist], fov: 32 }}
-        gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
-        dpr={[1, 2]}
+        camera={{ position: [camDist * 0.28, camDist * 0.1, camDist], fov: 30 }}
+        gl={{
+          antialias: true,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+          alpha: true,
+          premultipliedAlpha: false,
+        }}
+        dpr={[1.5, 2.5]}
       >
-        <color attach="background" args={["#f0f3f6"]} />
-        <ambientLight intensity={1.15} />
-        <directionalLight position={[5, 7, 6]} intensity={0.5} />
+        <color attach="background" args={["#ffffff"]} />
+        <ambientLight intensity={1.25} />
+        <directionalLight position={[5, 7, 6]} intensity={0.65} />
+        <directionalLight position={[-4, 3, -2]} intensity={0.25} />
         <Suspense fallback={null}>
           {shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
         </Suspense>

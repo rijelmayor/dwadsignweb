@@ -15,7 +15,7 @@ const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false }
 type Shape = "rect" | "circle";
 type ServiceId = "panaflex" | "lightbox" | "acrylic" | "neon" | "apc" | "tarp" | "sticker" | "metal" | "custom";
 type LbBuild = "builtup" | "acrylic";
-type Mount = "wall" | "bracket" | "pole" | "rooftop";
+type Mount = "wall" | "bracket" | "hanging" | "pole" | "rooftop";
 type Sides = "single" | "double";
 
 interface LineItem {
@@ -82,7 +82,20 @@ const SIDES_OPTIONS: [Sides, string, string][] = [
   ["double", "Double face", "Artwork on both sides (face + printing × 2)"],
 ];
 const MOUNTING_LABELS: Record<string, string> = {
-  wall: "Wall-mounted (flush)", bracket: "Wall with bracket", pole: "Pole bracket", rooftop: "Rooftop support (at back)",
+  wall: "Flush on wall",
+  bracket: "Side arm / projecting",
+  hanging: "Hanging from ceiling",
+  pole: "Pole bracket",
+  rooftop: "Rooftop legs (behind)",
+};
+
+/** Short sales-friendly descriptions for each mount */
+const MOUNTING_HELP: Record<string, string> = {
+  wall: "Sign sits flat against the wall — most common for storefront panels.",
+  bracket: "Blade / side arm sticks out from the wall (great for circle or box signs over the sidewalk).",
+  hanging: "Suspended from the ceiling or soffit with rods/cables (like hanging lightboxes).",
+  pole: "Clamps onto an existing pole — pole itself not included in the quote.",
+  rooftop: "Steel legs behind the sign for roof or freestanding install.",
 };
 
 const LIGHTING_OPTIONS = [["without", "Without Light"], ["with", "With Light"]] as const;
@@ -96,9 +109,19 @@ function MountIcon({ id }: { id: Mount }) {
       {id === "wall" && (<><rect x="6" y="3" width="6" height="38" {...common} /><rect x="12" y="10" width="5" height="24" fill="currentColor" stroke="none" /></>)}
       {id === "bracket" && (
         <>
-          <rect x="4" y="3" width="6" height="38" {...common} />
-          <path d="M10 13 H24 M10 31 H24 M10 20 L18 13 M10 38 L18 31" {...common} />
-          <rect x="24" y="8" width="5" height="28" fill="currentColor" stroke="none" />
+          {/* Wall + side arm + sign (projecting / blade) */}
+          <rect x="4" y="3" width="5" height="38" {...common} />
+          <path d="M9 16 H28" {...common} />
+          <path d="M9 28 H28" {...common} />
+          <rect x="28" y="10" width="18" height="24" rx="2" fill="currentColor" stroke="none" />
+        </>
+      )}
+      {id === "hanging" && (
+        <>
+          {/* Ceiling + rods + hanging sign */}
+          <path d="M6 6 H50" {...common} strokeWidth={3} />
+          <path d="M18 6 V16 M38 6 V16" {...common} />
+          <rect x="12" y="16" width="32" height="18" rx="2" fill="currentColor" stroke="none" />
         </>
       )}
       {id === "pole" && (
@@ -155,10 +178,13 @@ export default function QuoteBuilder() {
   const [sitePhoto, setSitePhoto] = useState<string>("");
   const [placementType, setPlacementType] = useState<"storefront" | "wall" | "bracket" | "pole" | "rooftop" | "other">("wall");
   const [placementNote, setPlacementNote] = useState("");
-  /** Position of 3D sign on site photo (percent 0–100) + relative scale */
+  /** Position of 3D sign on site photo (percent 0–100) + stretch */
   const [pinPos, setPinPos] = useState({ x: 50, y: 45 });
   const [pinScale, setPinScale] = useState(28); // % of photo width
-  const [siteMockup, setSiteMockup] = useState<string>(""); // iso capture for overlay
+  const [pinStretchX, setPinStretchX] = useState(100); // horizontal stretch %
+  const [pinStretchY, setPinStretchY] = useState(100); // vertical stretch %
+  const [pinSkew, setPinSkew] = useState(0); // degrees — curve/perspective feel
+  const [siteMockup, setSiteMockup] = useState<string>(""); // clear iso for overlay
   /** Wizard step 1–6 so Live 3D stays fully visible */
   const [buildStep, setBuildStep] = useState(1);
   /** Draft strings so size fields can be cleared and typed freely */
@@ -438,7 +464,9 @@ export default function QuoteBuilder() {
   };
 
   const refreshSiteMockup = () => {
-    const iso = sceneRef.current?.captureIso() ?? null;
+    // Prefer transparent PNG so only the sign shows on the site photo
+    const clear = sceneRef.current?.captureIsoClear?.() ?? null;
+    const iso = clear || sceneRef.current?.captureIso() ?? null;
     if (iso) setSiteMockup(iso);
   };
 
@@ -767,23 +795,28 @@ export default function QuoteBuilder() {
 
               <div>
                 <label className={labelCls}>How does it attach?</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(["wall", "bracket", "pole", "rooftop"] as Mount[]).map((id) => (
-                    <button key={id} onClick={() => setMounting(id)} className={`rounded-xl border px-2 py-2.5 text-center transition flex flex-col items-center gap-1 ${mounting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
+                <p className="text-[11px] text-fog mb-2">Pick the style that matches the job — works for rectangle and circle.</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(["wall", "bracket", "hanging", "pole", "rooftop"] as Mount[]).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setMounting(id)}
+                      className={`rounded-xl border px-2 py-2.5 text-left transition flex flex-col items-center gap-1 ${
+                        mounting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"
+                      }`}
+                    >
                       <MountIcon id={id} />
-                      <span className="block text-[11px] font-semibold leading-tight">{MOUNTING_LABELS[id]}</span>
+                      <span className="block text-[11px] font-semibold leading-tight text-center">{MOUNTING_LABELS[id]}</span>
                     </button>
                   ))}
                 </div>
-
-                {mounting === "pole" && (
-                  <p className="mt-2 text-[11px] text-fog">
-                    Pole bracket only — the pole is not included in the quotation. {isCircle ? "Circle signs use 1 bracket." : "Rectangle: 1 bracket for smaller signs, 2 when the sign is 3 ft or larger."} Using {bracketCount} bracket{bracketCount > 1 ? "s" : ""}.
-                  </p>
-                )}
-                {mounting === "rooftop" && (
-                  <p className="mt-2 text-[11px] text-fog">Steel supports are placed at the back of the signage.</p>
-                )}
+                <p className="mt-2 text-[11px] text-fog leading-snug rounded-lg bg-ink/40 border border-line px-3 py-2">
+                  {MOUNTING_HELP[mounting]}
+                  {mounting === "pole" && (
+                    <> {isCircle ? "Circle uses 1 bracket." : "Rectangle: 1 bracket if small, 2 if 3 ft or larger."} Using {bracketCount}.</>
+                  )}
+                </p>
               </div>
               <div className="flex justify-between pt-1 gap-2">
                 <button type="button" onClick={() => setBuildStep(3)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
@@ -941,37 +974,63 @@ export default function QuoteBuilder() {
                 style={{ minHeight: 200 }}
               >
                 <img src={sitePhoto} alt="Site" className="w-full h-auto block max-h-[360px] object-contain mx-auto" />
-                {/* 3D sign overlay at pin */}
+                {/* 3D sign overlay at pin — transparent render + stretch/skew */}
                 {(siteMockup || lines[lines.length - 1]?.renders.iso) && (
                   <img
                     src={siteMockup || lines[lines.length - 1]?.renders.iso || ""}
                     alt="Sign placement"
-                    className="absolute pointer-events-none drop-shadow-lg"
+                    className="absolute pointer-events-none drop-shadow-md"
                     style={{
                       left: `${pinPos.x}%`,
                       top: `${pinPos.y}%`,
                       width: `${pinScale}%`,
-                      transform: "translate(-50%, -50%)",
-                      maxHeight: "45%",
+                      transform: `translate(-50%, -50%) scaleX(${pinStretchX / 100}) scaleY(${pinStretchY / 100}) skewX(${pinSkew}deg)`,
+                      transformOrigin: "center center",
+                      maxHeight: "50%",
                       objectFit: "contain",
+                      background: "transparent",
                     }}
                   />
                 )}
                 {/* Pin marker */}
                 <div
-                  className="absolute w-4 h-4 rounded-full border-2 border-white bg-teal shadow-md pointer-events-none"
+                  className="absolute w-4 h-4 rounded-full border-2 border-white bg-teal shadow-md pointer-events-none z-10"
                   style={{ left: `${pinPos.x}%`, top: `${pinPos.y}%`, transform: "translate(-50%, -50%)" }}
                 />
               </div>
-              <p className="text-[11px] text-gray-500">Tap the photo to move the pin. Use the slider to resize the sign on the photo.</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-xs text-gray-600 flex items-center gap-2">
-                  Sign size on photo
-                  <input type="range" min={10} max={60} value={pinScale} onChange={(e) => setPinScale(+e.target.value)} className="w-32" />
-                  <span className="font-semibold">{pinScale}%</span>
+              <p className="text-[11px] text-gray-500">Tap the photo to move the pin. Stretch / skew to match the wall angle.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600">
+                <label className="flex items-center gap-2">
+                  Size
+                  <input type="range" min={8} max={70} value={pinScale} onChange={(e) => setPinScale(+e.target.value)} className="flex-1" />
+                  <span className="font-semibold w-10 text-right">{pinScale}%</span>
                 </label>
+                <label className="flex items-center gap-2">
+                  Stretch W
+                  <input type="range" min={50} max={160} value={pinStretchX} onChange={(e) => setPinStretchX(+e.target.value)} className="flex-1" />
+                  <span className="font-semibold w-10 text-right">{pinStretchX}%</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  Stretch H
+                  <input type="range" min={50} max={160} value={pinStretchY} onChange={(e) => setPinStretchY(+e.target.value)} className="flex-1" />
+                  <span className="font-semibold w-10 text-right">{pinStretchY}%</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  Skew / curve
+                  <input type="range" min={-25} max={25} value={pinSkew} onChange={(e) => setPinSkew(+e.target.value)} className="flex-1" />
+                  <span className="font-semibold w-10 text-right">{pinSkew}°</span>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
                 <button type="button" onClick={refreshSiteMockup} className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">
-                  Refresh 3D on photo
+                  Refresh sign (no background)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPinStretchX(100); setPinStretchY(100); setPinSkew(0); setPinScale(28); }}
+                  className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold hover:bg-gray-50"
+                >
+                  Reset stretch
                 </button>
                 <button type="button" onClick={() => { setSitePhoto(""); setSiteMockup(""); }} className="text-xs text-red-500 hover:underline">
                   Remove photo
@@ -1123,8 +1182,10 @@ export default function QuoteBuilder() {
                               left: `${pinPos.x}%`,
                               top: `${pinPos.y}%`,
                               width: `${pinScale}%`,
-                              transform: "translate(-50%, -50%)",
+                              transform: `translate(-50%, -50%) scaleX(${pinStretchX / 100}) scaleY(${pinStretchY / 100}) skewX(${pinSkew}deg)`,
+                              transformOrigin: "center center",
                               objectFit: "contain",
+                              background: "transparent",
                             }}
                           />
                         )}
