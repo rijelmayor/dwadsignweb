@@ -1,4 +1,5 @@
 "use client";
+import { presetFor, presetsFor, priceSign } from "@/lib/presets";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -71,7 +72,7 @@ const LOCAL_DRAFTS_KEY = "dw_quote_drafts_v1";
 /** IDs the user deleted on this device — hide even if server delete fails */
 const DELETED_DRAFTS_KEY = "dw_quote_drafts_deleted_v1";
 
-const LB_MAX_FT = 3;
+const LB_MAX_FT = 2;
 
 interface ServiceDef {
   id: ServiceId;
@@ -198,6 +199,11 @@ export default function QuoteBuilder() {
   const [qty, setQty] = useState(1);
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
+  const [presetId, setPresetId] = useState("");
+  const [neonColors, setNeonColors] = useState(1);
+  const [psu, setPsu] = useState(0);
+  const [leftoverLost, setLeftoverLost] = useState(false);
+  const [mobilization, setMobilization] = useState<number | null>(null);
   const [mounting, setMounting] = useState<Mount>("wall");
   /** 1 = single arm, 2 = double arm (bracket / hanging / pole / pole_single) */
   const [armCount, setArmCount] = useState<1 | 2>(1);
@@ -292,7 +298,12 @@ export default function QuoteBuilder() {
     returnColor,
   }), [thicknessIn, isLightbox, lit, mounting, serviceId, bodyColor, returnColor]);
 
+  const activePreset = presetFor(serviceId, { lit, lbBuild, presetId });
   const live = useMemo(() => {
+    if (activePreset) {
+      const pp = priceSign(activePreset, qs.presetSettings, areaSqft, sides === "double", { colors: neonColors, psu, leftoverLost });
+      return { rates: { construction: 0, face: 0, lighting: 0, printing: 0 }, raw: pp.fab + pp.material, unitCost: pp.unit, hasTbd: pp.tbd, breakdown: { construction: pp.fab, face: pp.material, lighting: 0, printing: 0, markup: pp.markup } as LineItem["breakdown"] | undefined };
+    }
     const markup = 1 + qs.markupPct / 100;
     const pr = qs.pricing;
     const key = lit ? "with" : "without";
@@ -317,7 +328,7 @@ export default function QuoteBuilder() {
     };
     const raw = (rates.construction + rates.face + rates.lighting + rates.printing) * areaSqft;
     return { rates, raw, unitCost: Math.max(pr.minimumCharge || 0, raw * markup), hasTbd: rates.face <= 0 };
-  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing]);
+  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing, activePreset, sides, neonColors, psu, leftoverLost]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
@@ -329,6 +340,7 @@ export default function QuoteBuilder() {
   const pickService = (id: ServiceId) => {
     const nextDef = SERVICES.find((x) => x.id === id) ?? SERVICES[0];
     setServiceId(id);
+    setPresetId("");
     setThicknessIn(nextDef.thicknessIn);
     setLighting(nextDef.defaultLight);
     if (shape === "circle" && nextDef.circleMaxFt) setDiameter((d) => Math.min(d, nextDef.circleMaxFt!));
@@ -366,8 +378,8 @@ export default function QuoteBuilder() {
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, areaSqft, qty,
-      face: `${faceLabel} · ${sidesLabel} · face ${BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor} / depth ${BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
-      breakdown: {
+      face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · face ${BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor} / depth ${BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
+      breakdown: (live as { breakdown?: LineItem["breakdown"] }).breakdown ?? {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
       },
@@ -378,7 +390,9 @@ export default function QuoteBuilder() {
 
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
   const subtotal = lines.reduce((s, l) => s + l.unitCost * l.qty, 0);
-  const afterDisc = Math.max(0, subtotal - discount);
+  const mobilDefault = lines.some((l) => l.areaSqft > qs.presetSettings.mobilThresholdSqft) ? qs.presetSettings.mobilLarge : qs.presetSettings.mobilSmall;
+  const mobil = lines.length === 0 ? 0 : (mobilization ?? mobilDefault);
+  const afterDisc = Math.max(0, subtotal - discount) + mobil;
   const vat = afterDisc * (qs.vatPct / 100);
   const grand = afterDisc + vat;
   const quoteNo = `${qs.quotePrefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(lines.length || 1).padStart(2, "0")}`;
@@ -541,6 +555,7 @@ export default function QuoteBuilder() {
     }
     setLines(linesArr);
     setDiscount(Number(totals.discount ?? 0));
+    setMobilization(totals.mobilization == null ? null : Number(totals.mobilization));
     setPreparedBy(String(totals.preparedBy ?? ""));
     setDraftName(d.draftName);
     setEditingDraftId(d.id);
@@ -602,6 +617,7 @@ export default function QuoteBuilder() {
     const totals = {
       sub: subtotal,
       discount,
+      mobilization: mobil,
       vat,
       grand,
       preparedBy,
@@ -1185,6 +1201,32 @@ export default function QuoteBuilder() {
                 </div>
               )}
 
+              {serviceId !== "panaflex" && presetsFor(serviceId).length > 1 && (
+                <div>
+                  <label className={labelCls}>Build</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {presetsFor(serviceId).map((p) => (
+                      <button key={p.id} onClick={() => { setPresetId(p.id); setLighting(p.lit); }} className={`rounded-xl border px-3 py-2 text-left transition ${activePreset?.id === p.id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                        <span className="block text-sm font-semibold">{p.name}</span>
+                        <span className="block text-[11px] opacity-80">{p.sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {activePreset?.kind === "acrylic" && activePreset.thick && (
+                <label className="flex items-center gap-2 text-xs text-fog">
+                  <input type="checkbox" checked={leftoverLost} onChange={(e) => setLeftoverLost(e.target.checked)} />
+                  Leftover sheet cannot be reused (bill the full sheet)
+                </label>
+              )}
+              {activePreset?.kind === "neon" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={labelCls}>Neon colors</label><input type="number" min={1} className={inputCls} value={neonColors} onChange={(e) => setNeonColors(Math.max(1, +e.target.value || 1))} /></div>
+                  <div><label className={labelCls}>12V power supply ₱</label><input type="number" min={0} className={inputCls} value={psu} onChange={(e) => setPsu(+e.target.value || 0)} /></div>
+                </div>
+              )}
+
               <div>
                 <label className={labelCls}>One side or both?</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -1734,6 +1776,7 @@ export default function QuoteBuilder() {
               <div className="mt-1 space-y-0.5 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span className="font-medium">₱{fmt(subtotal)}</span></div>
                 {discount > 0 && <div className="flex justify-between"><span className="text-gray-500">Discount</span><span>−₱{fmt(discount)}</span></div>}
+                {mobil > 0 && <div className="flex justify-between"><span className="text-gray-500">Mobilization (travel)</span><span>₱{fmt(mobil)}</span></div>}
                 <div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div>
                 <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1 mt-1">
                   <span>Total</span><span className="text-[#011424]">₱{fmt(grand)}</span>
@@ -1742,6 +1785,10 @@ export default function QuoteBuilder() {
               <div className="no-export mt-1.5 flex items-center gap-1.5">
                 <span className="text-gray-500 text-[10px]">Discount ₱</span>
                 <input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-right text-xs" />
+              </div>
+              <div className="no-export mt-1.5 flex items-center gap-1.5">
+                <span className="text-gray-500 text-[10px]">Mobilization ₱</span>
+                <input type="number" min={0} value={mobil} onChange={(e) => setMobilization(+e.target.value || 0)} className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-right text-xs" />
               </div>
             </div>
             <div className="p-3">

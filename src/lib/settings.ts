@@ -1,4 +1,5 @@
 import { site } from "@/lib/site";
+import { DEFAULT_PRESET_SETTINGS, mergePresetSettings, type PresetSettings } from "@/lib/presets";
 
 export interface BrandingSettings {
   logoUrl: string;
@@ -175,6 +176,7 @@ export interface QuoteSettings {
   terms: string[];
   preparedByTitle: string;
   pricing: PricingSettings;
+  presetSettings: PresetSettings;
 }
 const zeroRate = (): LightRate => ({ without: 0, with: 0 });
 export const DEFAULT_PRICING: PricingSettings = {
@@ -188,7 +190,7 @@ export const DEFAULT_PRICING: PricingSettings = {
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   markupPct: 40, vatPct: 12, quotePrefix: "DW",
   terms: ["This quotation is valid for 30 days from the date of issue.", "50% downpayment is required to commence production.", "Prices are subject to site survey confirmation."],
-  preparedByTitle: "Sales Specialist", pricing: DEFAULT_PRICING,
+  preparedByTitle: "Sales Specialist", pricing: DEFAULT_PRICING, presetSettings: DEFAULT_PRESET_SETTINGS,
 };
 function num(v: unknown, fallback: number) { return typeof v === "number" && Number.isFinite(v) ? v : fallback; }
 function obj(v: unknown): Record<string, unknown> { return v && typeof v === "object" ? (v as Record<string, unknown>) : {}; }
@@ -218,5 +220,5 @@ function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {
   const r = obj(raw), d = DEFAULT_QUOTE_SETTINGS;
   const terms = Array.isArray(r.terms) && r.terms.length > 0 ? (r.terms as string[]) : d.terms;
-  return { markupPct: num(r.markupPct, d.markupPct), vatPct: num(r.vatPct, d.vatPct), quotePrefix: typeof r.quotePrefix === "string" && r.quotePrefix.trim() ? r.quotePrefix.trim() : d.quotePrefix, terms, preparedByTitle: typeof r.preparedByTitle === "string" ? r.preparedByTitle : d.preparedByTitle, pricing: mergePricing(r) };
+  return { markupPct: num(r.markupPct, d.markupPct), vatPct: num(r.vatPct, d.vatPct), quotePrefix: typeof r.quotePrefix === "string" && r.quotePrefix.trim() ? r.quotePrefix.trim() : d.quotePrefix, terms, preparedByTitle: typeof r.preparedByTitle === "string" ? r.preparedByTitle : d.preparedByTitle, pricing: mergePricing(r), presetSettings: mergePresetSettings(r.presetSettings) };
 }

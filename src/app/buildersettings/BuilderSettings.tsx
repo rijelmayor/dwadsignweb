@@ -27,6 +27,7 @@ import {
   type ComponentRole,
 } from "@/lib/catalog";
 import { site } from "@/lib/site";
+import PresetEditor from "./PresetEditor";
 
 type Tab = "landing" | "quote" | "catalog";
 const input = "w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-white placeholder:text-fog/50 focus:border-teal outline-none";
@@ -603,6 +604,8 @@ export default function BuilderSettings() {
                 <div><label className={label}>Lightbox minimum charge · per sign</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.lightboxMinimumCharge} onChange={(e) => setPricing({ lightboxMinimumCharge: +e.target.value || 0 })} /></div>
               </div>
             </section>
+
+            <PresetEditor quote={quote} setQuote={setQuote} />
 
             <button disabled={saving} onClick={() => save("quote", quote)} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
               {saving ? "Saving…" : "Save Quote & Pricing to Supabase"}
