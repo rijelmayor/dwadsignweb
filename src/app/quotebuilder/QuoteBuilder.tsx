@@ -444,6 +444,7 @@ export default function QuoteBuilder() {
     } catch { /* ignore */ }
   };
 
+<<<<<<< HEAD
   const getDeletedIds = (): Set<string> => {
     try {
       const raw = localStorage.getItem(DELETED_DRAFTS_KEY);
@@ -462,6 +463,8 @@ export default function QuoteBuilder() {
     } catch { /* ignore */ }
   };
 
+=======
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
   /** One-time cleanup of local junk + return named drafts only */
   const purgeUnnamedLocal = () => {
     try {
@@ -476,8 +479,12 @@ export default function QuoteBuilder() {
   const loadDrafts = useCallback(async () => {
     setLoadingDrafts(true);
     purgeUnnamedLocal();
+<<<<<<< HEAD
     const deletedIds = getDeletedIds();
     const local = readLocalDrafts().filter((d) => !deletedIds.has(d.id));
+=======
+    const local = readLocalDrafts();
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
     const sb = createClient();
     if (!sb) {
       setDrafts(local);
@@ -496,7 +503,11 @@ export default function QuoteBuilder() {
       setLoadingDrafts(false);
       return;
     }
+<<<<<<< HEAD
     // Only show drafts with a real filename, not soft-deleted, not locally deleted
+=======
+    // Only show drafts that have an explicit draftName (user filename)
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
     const remote: DraftRow[] = (data ?? [])
       .map((row) => {
         const totals = (row.totals ?? {}) as Record<string, unknown>;
@@ -511,6 +522,7 @@ export default function QuoteBuilder() {
           itemCount: linesArr.length,
           source: "supabase" as const,
           raw: { client: row.client as ClientInfo, lines: linesArr, totals },
+<<<<<<< HEAD
           archived: Boolean(totals.archived),
         };
       })
@@ -519,16 +531,29 @@ export default function QuoteBuilder() {
 
     const remoteIds = new Set(remote.map((r) => r.id));
     const localOnly = local.filter((l) => !remoteIds.has(l.id) && !deletedIds.has(l.id));
+=======
+        };
+      })
+      .filter((d) => hasRealName(d.draftName));
+
+    // When online: remote is source of truth for shared ids; local-only = offline saves not yet on server
+    const remoteIds = new Set(remote.map((r) => r.id));
+    // Drop local copies that mirror remote (avoid ghosts after delete)
+    const localOnly = local.filter((l) => !remoteIds.has(l.id));
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
     setDrafts([...remote, ...localOnly]);
     setLoadingDrafts(false);
   }, []);
 
   const openDraft = (d: DraftRow) => {
+<<<<<<< HEAD
     if (getDeletedIds().has(d.id)) {
       setMsg("This draft was deleted.");
       setDrafts((prev) => prev.filter((x) => x.id !== d.id));
       return;
     }
+=======
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
     if (!hasRealName(d.draftName)) {
       setMsg("This draft has no filename and cannot be opened.");
       return;
@@ -551,9 +576,22 @@ export default function QuoteBuilder() {
 
   const deleteDraft = async (d: DraftRow) => {
     if (!confirm(`Delete draft “${d.draftName}”?`)) return;
+<<<<<<< HEAD
     // 1) Hide immediately on this device
     markDeletedId(d.id);
     deleteLocalDraft(d.id);
+=======
+    // Always remove from both places so it cannot reappear after refresh
+    deleteLocalDraft(d.id);
+    const sb = createClient();
+    if (sb) {
+      await sb.from("quotes").delete().eq("id", d.id);
+    }
+    if (editingDraftId === d.id) {
+      setEditingDraftId(null);
+      setDraftName("");
+    }
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
     setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     if (editingDraftId === d.id) {
       setEditingDraftId(null);
@@ -870,6 +908,7 @@ export default function QuoteBuilder() {
                       if (!confirm("Delete ALL named drafts from this list?")) return;
                       const sb = createClient();
                       for (const d of drafts) {
+<<<<<<< HEAD
                         markDeletedId(d.id);
                         deleteLocalDraft(d.id);
                         if (sb) {
@@ -877,11 +916,18 @@ export default function QuoteBuilder() {
                           await sb.from("quotes").update({ status: "lost", totals: { ...prev, archived: true, draftName: d.draftName } }).eq("id", d.id);
                           await sb.from("quotes").delete().eq("id", d.id);
                         }
+=======
+                        deleteLocalDraft(d.id);
+                        if (sb) await sb.from("quotes").delete().eq("id", d.id);
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
                       }
                       setDrafts([]);
                       setEditingDraftId(null);
                       setDraftName("");
+<<<<<<< HEAD
                       setLines([]);
+=======
+>>>>>>> ba0131fcd50f32bf9eadc021b1baed3a8677c7ca
                       setMsg("All drafts cleared.");
                       setTimeout(() => setMsg(""), 2000);
                     }}
