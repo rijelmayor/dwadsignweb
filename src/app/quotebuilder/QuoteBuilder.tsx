@@ -1,5 +1,10 @@
 "use client";
 import { presetFor, presetsFor, priceSign } from "@/lib/presets";
+import { LETTER_FONTS, layoutText, useLetterFont } from "@/lib/letters";
+import type { LettersSpec } from "@/components/LettersMesh";
+
+const NEON_PALETTE = ["#ff4fd8", "#4fd8ff", "#ffe14f", "#7dff4f", "#ff7a4f", "#b388ff"];
+const LETTER_IDS = ["ac-letters-flat", "ac-letters", "ac-letters-lit"];
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -200,6 +205,12 @@ export default function QuoteBuilder() {
   const [lighting, setLighting] = useState("without");
   const [printing, setPrinting] = useState("sticker");
   const [presetId, setPresetId] = useState("");
+  const [letterText, setLetterText] = useState("BRAND");
+  const [letterFont, setLetterFont] = useState("helvetiker");
+  const [letterHeightIn, setLetterHeightIn] = useState(12);
+  const [letterDepthIn, setLetterDepthIn] = useState(2);
+  const [letterGlow, setLetterGlow] = useState<"halo" | "front">("halo");
+  const [neonBacking, setNeonBacking] = useState<"clear" | "black">("clear");
   const [neonColors, setNeonColors] = useState(1);
   const [psu, setPsu] = useState(0);
   const [leftoverLost, setLeftoverLost] = useState(false);
@@ -299,6 +310,28 @@ export default function QuoteBuilder() {
   }), [thicknessIn, isLightbox, lit, mounting, serviceId, bodyColor, returnColor]);
 
   const activePreset = presetFor(serviceId, { lit, lbBuild, presetId });
+  const isLetters = !!activePreset && LETTER_IDS.includes(activePreset.id);
+  const isNeonText = activePreset?.kind === "neon";
+  const lettersOn = (isLetters || isNeonText) && !isCircle;
+  const flatCut = activePreset?.id === "ac-letters-flat";
+  const lFont = useLetterFont(letterFont, lettersOn);
+  const layout = useMemo(() => (lFont && lettersOn ? layoutText(lFont, letterText.trim() ? letterText : " ") : null), [lFont, lettersOn, letterText]);
+  const lScale = layout ? letterHeightIn / 12 / layout.capH : 1;
+  const boxW = layout ? Math.round((layout.maxX - layout.minX) * lScale * 100) / 100 : 0;
+  const boxH = layout ? Math.round((layout.maxY - layout.minY) * lScale * 100) / 100 : 0;
+  useEffect(() => {
+    if (!lettersOn || !layout || boxW <= 0 || boxH <= 0) return;
+    setWidth(boxW); setHeight(boxH); setWidthStr(String(boxW)); setHeightStr(String(boxH));
+  }, [lettersOn, layout, boxW, boxH]);
+  const letterDepthUsed = isNeonText ? 0.5 : flatCut ? 0.2 : letterDepthIn;
+  useEffect(() => {
+    if (lettersOn) { setThicknessIn(letterDepthUsed); setThicknessStr(String(letterDepthUsed)); }
+  }, [lettersOn, letterDepthUsed]);
+  const lettersSpec: LettersSpec | undefined = layout && lettersOn ? {
+    layout, scale: lScale, depthFt: letterDepthUsed / 12, faceFt: flatCut ? letterDepthUsed / 12 : (activePreset?.thick ? 5 : 3) / 304.8,
+    faceColor: bodyColor, returnColor, glow: activePreset?.id === "ac-letters-lit" ? letterGlow : "none",
+    neon: isNeonText, neonColors: NEON_PALETTE.slice(0, Math.max(1, neonColors)), backing: neonBacking,
+  } : undefined;
   const live = useMemo(() => {
     if (activePreset) {
       const pp = priceSign(activePreset, qs.presetSettings, areaSqft, sides === "double", { colors: neonColors, psu, leftoverLost });
@@ -1220,6 +1253,30 @@ export default function QuoteBuilder() {
                   Leftover sheet cannot be reused (bill the full sheet)
                 </label>
               )}
+              {lettersOn && (
+                <div className="rounded-xl border border-gold/40 bg-ink/30 p-3 space-y-3">
+                  <p className={labelCls}>Live letters · type the client&apos;s text</p>
+                  <textarea className={`${inputCls} min-h-16`} value={letterText} onChange={(e) => setLetterText(e.target.value)} placeholder="Client text (Enter = new line)" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>Font (layout only)</label>
+                      <select className={inputCls} value={letterFont} onChange={(e) => setLetterFont(e.target.value)}>
+                        {LETTER_FONTS.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select></div>
+                    <div><label className={labelCls}>Letter height (in)</label><input type="number" min={1} className={inputCls} value={letterHeightIn} onChange={(e) => setLetterHeightIn(Math.max(1, +e.target.value || 1))} /></div>
+                    {isLetters && !flatCut && <div><label className={labelCls}>Return depth (in)</label><input type="number" min={0.5} step={0.5} className={inputCls} value={letterDepthIn} onChange={(e) => setLetterDepthIn(Math.max(0.5, +e.target.value || 0.5))} /></div>}
+                    {isNeonText && <div><label className={labelCls}>Backing</label>
+                      <select className={inputCls} value={neonBacking} onChange={(e) => setNeonBacking(e.target.value as "clear" | "black")}><option value="clear">Clear acrylic</option><option value="black">Black acrylic</option></select></div>}
+                  </div>
+                  {activePreset?.id === "ac-letters-lit" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["halo", "front"] as const).map((g) => (
+                        <button key={g} onClick={() => setLetterGlow(g)} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${letterGlow === g ? "border-gold bg-gold text-ink" : "border-line text-fog hover:border-gold"}`}>{g === "halo" ? "Halo (backlit)" : "Face-lit"}</button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-fog">Priced on the text box {boxW} × {boxH} ft = {(boxW * boxH).toFixed(2)} sqft. If the client&apos;s real font is wider or narrower, change Width / Height in Dimension to override.</p>
+                </div>
+              )}
               {activePreset?.kind === "neon" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={labelCls}>Neon colors</label><input type="number" min={1} className={inputCls} value={neonColors} onChange={(e) => setNeonColors(Math.max(1, +e.target.value || 1))} /></div>
@@ -1442,6 +1499,7 @@ export default function QuoteBuilder() {
                   lit={lit}
                   preview={isLightbox ? "lightbox" : "panaflex"}
                   traits={traits}
+                  letters={lettersSpec}
                   text="Your Logo"
                   logoUrl={activeLogo}
                   showDimensions

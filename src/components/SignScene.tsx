@@ -6,6 +6,7 @@ import { Suspense, useEffect, forwardRef, useImperativeHandle, useRef, type Reac
 import * as THREE from "three";
 import type { Traits } from "@/lib/traits";
 import type { PreviewKind } from "@/lib/catalog";
+import LettersMesh, { type LettersSpec } from "@/components/LettersMesh";
 
 export type SignShape = "rect" | "circle";
 /** panaflex = flat face · builtup = metal-return lightbox · acrylic = acrylic-build lightbox */
@@ -47,6 +48,8 @@ interface SignSceneProps {
   brackets?: number;
   /** Extra height under the sign (pole / rooftop supports) — computed by SignScene */
   below?: number;
+  /** Live 3D letters / LED neon text (replaces the box) */
+  letters?: LettersSpec;
 }
 
 function fmtFt(n: number) {
@@ -702,7 +705,16 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
         <directionalLight position={[5, 7, 6]} intensity={0.65} />
         <directionalLight position={[-4, 3, -2]} intensity={0.25} />
         <Suspense fallback={null}>
-          {shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
+          {props.letters ? (
+            <LettersMesh spec={props.letters} widthFt={widthFt} heightFt={heightFt}>
+              {props.showDimensions !== false && (
+                <>
+                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[widthFt / 2, -heightFt / 2, 0]} offset={[0, -Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0.06]} label={`W ${fmtFt(widthFt)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
+                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[-widthFt / 2, heightFt / 2, 0]} offset={[-Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0, 0.06]} label={`H ${fmtFt(heightFt)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
+                </>
+              )}
+            </LettersMesh>
+          ) : shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
         </Suspense>
         <CaptureController camDist={camDist} onReady={(api) => { apiRef.current = api; }} />
         <OrbitControls makeDefault minDistance={1.5} maxDistance={80} target={[0, 0, 0]} enablePan={false} />
