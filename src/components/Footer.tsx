@@ -8,7 +8,7 @@ export default function Footer({ links }: { links: LandingSettings["links"] }) {
       <div className="pointer-events-none absolute -bottom-24 left-1/2 -translate-x-1/2 h-48 w-[min(40rem,100vw)] rounded-full bg-teal/10 blur-[100px]" />
       <div className="relative mx-auto max-w-7xl flex flex-col sm:flex-row flex-wrap items-center justify-between gap-8 sm:gap-10">
         <div className="flex items-center gap-5">
-          <Image src="/logo-full.png" alt={`${site.name} ${site.descriptor}`} width={720} height={491} className="h-16 sm:h-20 md:h-24 w-auto max-w-[min(280px,80vw)]" />
+          <Image src="/dwlogo.png" alt={`${site.name} ${site.descriptor}`} width={720} height={200} className="h-16 sm:h-20 md:h-24 w-auto max-w-[min(280px,80vw)] object-contain" />
         </div>
         <div className="text-sm text-fog space-y-2 text-center">
           <p className="font-display tracking-[0.3em] uppercase text-xs text-teal">{site.tagline}</p>

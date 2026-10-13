@@ -466,7 +466,7 @@ export default function QuoteBuilder() {
   const refreshSiteMockup = () => {
     // Prefer transparent PNG so only the sign shows on the site photo
     const clear = sceneRef.current?.captureIsoClear?.() ?? null;
-    const iso = clear || sceneRef.current?.captureIso() ?? null;
+    const iso = clear || (sceneRef.current?.captureIso() ?? null);
     if (iso) setSiteMockup(iso);
   };
 
@@ -485,7 +485,7 @@ export default function QuoteBuilder() {
       <header className="sticky top-0 z-40 border-b border-line bg-ink/95 backdrop-blur-md">
         <div className="mx-auto max-w-[1600px] px-4 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <Link href="/"><Image src="/logo-mark.png" alt="DW" width={120} height={58} className="h-8 w-auto" /></Link>
+            <Link href="/"><Image src="/dwlogo.png" alt="Delight Works" width={200} height={48} className="h-8 w-auto object-contain" priority /></Link>
             <span className="font-display font-bold text-sm hidden sm:inline truncate">
               Quote Builder <span className="text-fog font-normal">· for sales</span>
             </span>
@@ -1074,7 +1074,7 @@ export default function QuoteBuilder() {
           {/* Friendly header */}
           <div className="bg-[#011424] text-white px-5 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-9 w-auto" />
+              <Image src="/dwlogo.png" alt="Delight Works" width={200} height={48} className="h-9 w-auto object-contain" />
               <div>
                 <p className="font-bold text-base leading-tight">Delight Works</p>
                 <p className="text-[10px] text-fog tracking-wide">{site.descriptor}</p>
