@@ -381,6 +381,12 @@ export default function QuoteBuilder() {
   const grand = afterDisc + vat;
   const quoteNo = `${qs.quotePrefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(lines.length || 1).padStart(2, "0")}`;
 
+  /** Only drafts that have a real user-chosen filename */
+  const hasRealName = (name: unknown) => {
+    const n = String(name ?? "").trim();
+    return n.length > 0;
+  };
+
   const readLocalDrafts = (): DraftRow[] => {
     try {
       const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
@@ -389,16 +395,22 @@ export default function QuoteBuilder() {
         id: string; quote_no: string; draftName: string; created_at: string;
         client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown>;
       }>;
-      return arr.map((d) => ({
-        id: d.id,
-        quote_no: d.quote_no,
-        draftName: d.draftName || d.quote_no,
-        created_at: d.created_at,
-        grand: Number((d.totals as { grand?: number })?.grand ?? 0),
-        itemCount: d.lines?.length ?? 0,
-        source: "local" as const,
-        raw: { client: d.client, lines: d.lines, totals: d.totals },
-      }));
+      return arr
+        .filter((d) => hasRealName(d.draftName) || hasRealName((d.totals as { draftName?: string })?.draftName))
+        .map((d) => {
+          const name = String(d.draftName || (d.totals as { draftName?: string })?.draftName || "").trim();
+          return {
+            id: d.id,
+            quote_no: d.quote_no,
+            draftName: name,
+            created_at: d.created_at,
+            grand: Number((d.totals as { grand?: number })?.grand ?? 0),
+            itemCount: d.lines?.length ?? 0,
+            source: "local" as const,
+            raw: { client: d.client, lines: d.lines, totals: d.totals },
+          };
+        })
+        .filter((d) => hasRealName(d.draftName));
     } catch {
       return [];
     }
@@ -408,13 +420,16 @@ export default function QuoteBuilder() {
     id: string; quote_no: string; draftName: string; created_at: string;
     client: ClientInfo; lines: LineItem[]; totals: Record<string, unknown>;
   }) => {
+    if (!hasRealName(entry.draftName)) return; // never persist unnamed
     try {
       const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
       const arr = raw ? (JSON.parse(raw) as typeof entry[]) : [];
-      const idx = arr.findIndex((x) => x.id === entry.id);
-      if (idx >= 0) arr[idx] = entry;
-      else arr.unshift(entry);
-      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(arr.slice(0, 40)));
+      // Drop any unnamed junk while we're at it
+      const cleaned = arr.filter((x) => hasRealName(x.draftName));
+      const idx = cleaned.findIndex((x) => x.id === entry.id);
+      if (idx >= 0) cleaned[idx] = entry;
+      else cleaned.unshift(entry);
+      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(cleaned.slice(0, 40)));
     } catch { /* ignore quota */ }
   };
 
@@ -427,8 +442,20 @@ export default function QuoteBuilder() {
     } catch { /* ignore */ }
   };
 
+  /** One-time cleanup of local junk + return named drafts only */
+  const purgeUnnamedLocal = () => {
+    try {
+      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw) as Array<{ draftName?: string; totals?: { draftName?: string } }>;
+      const cleaned = arr.filter((x) => hasRealName(x.draftName) || hasRealName(x.totals?.draftName));
+      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(cleaned));
+    } catch { /* ignore */ }
+  };
+
   const loadDrafts = useCallback(async () => {
     setLoadingDrafts(true);
+    purgeUnnamedLocal();
     const local = readLocalDrafts();
     const sb = createClient();
     if (!sb) {
@@ -441,34 +468,45 @@ export default function QuoteBuilder() {
       .select("id, quote_no, client, lines, totals, status, created_at")
       .eq("status", "draft")
       .order("created_at", { ascending: false })
-      .limit(40);
+      .limit(50);
     if (error) {
       setMsg(`Could not load drafts: ${error.message}`);
       setDrafts(local);
       setLoadingDrafts(false);
       return;
     }
-    const remote: DraftRow[] = (data ?? []).map((row) => {
-      const totals = (row.totals ?? {}) as Record<string, unknown>;
-      const linesArr = (row.lines ?? []) as LineItem[];
-      return {
-        id: row.id as string,
-        quote_no: row.quote_no as string,
-        draftName: String(totals.draftName || row.quote_no),
-        created_at: row.created_at as string,
-        grand: Number(totals.grand ?? 0),
-        itemCount: linesArr.length,
-        source: "supabase" as const,
-        raw: { client: row.client as ClientInfo, lines: linesArr, totals },
-      };
-    });
-    // Merge local-only drafts (not in remote)
+    // Only show drafts that have an explicit draftName (user filename)
+    const remote: DraftRow[] = (data ?? [])
+      .map((row) => {
+        const totals = (row.totals ?? {}) as Record<string, unknown>;
+        const name = String(totals.draftName ?? "").trim();
+        const linesArr = (row.lines ?? []) as LineItem[];
+        return {
+          id: row.id as string,
+          quote_no: row.quote_no as string,
+          draftName: name,
+          created_at: row.created_at as string,
+          grand: Number(totals.grand ?? 0),
+          itemCount: linesArr.length,
+          source: "supabase" as const,
+          raw: { client: row.client as ClientInfo, lines: linesArr, totals },
+        };
+      })
+      .filter((d) => hasRealName(d.draftName));
+
+    // When online: remote is source of truth for shared ids; local-only = offline saves not yet on server
     const remoteIds = new Set(remote.map((r) => r.id));
-    setDrafts([...remote, ...local.filter((l) => !remoteIds.has(l.id))]);
+    // Drop local copies that mirror remote (avoid ghosts after delete)
+    const localOnly = local.filter((l) => !remoteIds.has(l.id));
+    setDrafts([...remote, ...localOnly]);
     setLoadingDrafts(false);
   }, []);
 
   const openDraft = (d: DraftRow) => {
+    if (!hasRealName(d.draftName)) {
+      setMsg("This draft has no filename and cannot be opened.");
+      return;
+    }
     const linesArr = d.raw?.lines ?? [];
     const totals = d.raw?.totals ?? {};
     setLines(linesArr);
@@ -483,13 +521,16 @@ export default function QuoteBuilder() {
 
   const deleteDraft = async (d: DraftRow) => {
     if (!confirm(`Delete draft “${d.draftName}”?`)) return;
-    if (d.source === "local") {
-      deleteLocalDraft(d.id);
-    } else {
-      const sb = createClient();
-      if (sb) await sb.from("quotes").delete().eq("id", d.id);
+    // Always remove from both places so it cannot reappear after refresh
+    deleteLocalDraft(d.id);
+    const sb = createClient();
+    if (sb) {
+      await sb.from("quotes").delete().eq("id", d.id);
     }
-    if (editingDraftId === d.id) setEditingDraftId(null);
+    if (editingDraftId === d.id) {
+      setEditingDraftId(null);
+      setDraftName("");
+    }
     setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     setMsg("Draft deleted.");
     setTimeout(() => setMsg(""), 2000);
@@ -505,10 +546,9 @@ export default function QuoteBuilder() {
     }
     const name = draftName.trim();
     if (!name) {
-      setMsg("Enter a draft name (filename) so you can find and edit it later.");
+      setMsg("Draft name is required. Type a filename before saving.");
       setSaving(false);
-      setShowDrafts(true);
-      return;
+      return; // do not open drafts panel as a workaround — just block save
     }
     const totals = {
       sub: subtotal,
@@ -521,6 +561,7 @@ export default function QuoteBuilder() {
     };
     const linePayload = lines.map((l) => ({ ...l, amount: l.unitCost * l.qty }));
     const sb = createClient();
+    let savedId = editingDraftId;
 
     if (sb) {
       if (editingDraftId) {
@@ -534,7 +575,12 @@ export default function QuoteBuilder() {
             status: "draft",
           })
           .eq("id", editingDraftId);
-        setMsg(error ? `Update failed: ${error.message}` : `Updated draft “${name}”.`);
+        if (error) {
+          setMsg(`Update failed: ${error.message}`);
+          setSaving(false);
+          return;
+        }
+        setMsg(`Updated draft “${name}”.`);
       } else {
         const { data, error } = await sb
           .from("quotes")
@@ -547,17 +593,25 @@ export default function QuoteBuilder() {
           })
           .select("id")
           .single();
-        if (error) setMsg(`Save failed: ${error.message}`);
-        else {
-          if (data?.id) setEditingDraftId(data.id as string);
-          setMsg(`Saved draft “${name}”. Open Drafts anytime to edit.`);
+        if (error) {
+          setMsg(`Save failed: ${error.message}`);
+          setSaving(false);
+          return;
         }
+        savedId = (data?.id as string) || null;
+        if (savedId) setEditingDraftId(savedId);
+        setMsg(`Saved draft “${name}”. Open My drafts anytime to edit.`);
       }
     } else {
-      // Local-only fallback
-      const id = editingDraftId || crypto.randomUUID();
+      savedId = editingDraftId || crypto.randomUUID();
+      setEditingDraftId(savedId);
+      setMsg(`Saved draft “${name}” on this device (offline).`);
+    }
+
+    // Mirror named draft locally so list stays consistent on this device
+    if (savedId && name) {
       writeLocalDraft({
-        id,
+        id: savedId,
         quote_no: quoteNo,
         draftName: name,
         created_at: new Date().toISOString(),
@@ -565,8 +619,6 @@ export default function QuoteBuilder() {
         lines: linePayload,
         totals,
       });
-      setEditingDraftId(id);
-      setMsg(`Saved draft “${name}” on this device (offline).`);
     }
     setSaving(false);
     setTimeout(() => setMsg(""), 4000);
@@ -758,9 +810,32 @@ export default function QuoteBuilder() {
                 <h2 className="font-display text-lg font-bold">My drafts</h2>
                 <p className="text-xs text-fog">Open a draft to edit, or name this quote before saving.</p>
               </div>
-              <button type="button" onClick={loadDrafts} className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-fog hover:text-white">
-                {loadingDrafts ? "Loading…" : "Refresh"}
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={loadDrafts} className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-fog hover:text-white">
+                  {loadingDrafts ? "Loading…" : "Refresh"}
+                </button>
+                {drafts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("Delete ALL named drafts from this list?")) return;
+                      const sb = createClient();
+                      for (const d of drafts) {
+                        deleteLocalDraft(d.id);
+                        if (sb) await sb.from("quotes").delete().eq("id", d.id);
+                      }
+                      setDrafts([]);
+                      setEditingDraftId(null);
+                      setDraftName("");
+                      setMsg("All drafts cleared.");
+                      setTimeout(() => setMsg(""), 2000);
+                    }}
+                    className="rounded-full border border-red-400/50 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2 items-end">
               <div className="flex-1 min-w-[200px]">
@@ -1646,8 +1721,9 @@ export default function QuoteBuilder() {
                   {exporting ? "Exporting…" : "Download PNG"}
                 </button>
                 <button
-                  disabled={saving || lines.length === 0}
+                  disabled={saving || lines.length === 0 || !draftName.trim()}
                   onClick={saveQuote}
+                  title={!draftName.trim() ? "Enter a draft name first" : undefined}
                   className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50"
                 >
                   {saving ? "Saving…" : editingDraftId ? "Update draft" : "Save draft"}
