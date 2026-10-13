@@ -68,6 +68,8 @@ interface DraftRow {
 }
 
 const LOCAL_DRAFTS_KEY = "dw_quote_drafts_v1";
+/** IDs the user deleted on this device — hide even if server delete fails */
+const DELETED_DRAFTS_KEY = "dw_quote_drafts_deleted_v1";
 
 const LB_MAX_FT = 3;
 
@@ -442,6 +444,24 @@ export default function QuoteBuilder() {
     } catch { /* ignore */ }
   };
 
+  const getDeletedIds = (): Set<string> => {
+    try {
+      const raw = localStorage.getItem(DELETED_DRAFTS_KEY);
+      if (!raw) return new Set();
+      return new Set(JSON.parse(raw) as string[]);
+    } catch {
+      return new Set();
+    }
+  };
+
+  const markDeletedId = (id: string) => {
+    try {
+      const set = getDeletedIds();
+      set.add(id);
+      localStorage.setItem(DELETED_DRAFTS_KEY, JSON.stringify([...set].slice(-200)));
+    } catch { /* ignore */ }
+  };
+
   /** One-time cleanup of local junk + return named drafts only */
   const purgeUnnamedLocal = () => {
     try {
@@ -456,7 +476,8 @@ export default function QuoteBuilder() {
   const loadDrafts = useCallback(async () => {
     setLoadingDrafts(true);
     purgeUnnamedLocal();
-    const local = readLocalDrafts();
+    const deletedIds = getDeletedIds();
+    const local = readLocalDrafts().filter((d) => !deletedIds.has(d.id));
     const sb = createClient();
     if (!sb) {
       setDrafts(local);
@@ -475,7 +496,7 @@ export default function QuoteBuilder() {
       setLoadingDrafts(false);
       return;
     }
-    // Only show drafts that have an explicit draftName (user filename)
+    // Only show drafts with a real filename, not soft-deleted, not locally deleted
     const remote: DraftRow[] = (data ?? [])
       .map((row) => {
         const totals = (row.totals ?? {}) as Record<string, unknown>;
@@ -490,25 +511,34 @@ export default function QuoteBuilder() {
           itemCount: linesArr.length,
           source: "supabase" as const,
           raw: { client: row.client as ClientInfo, lines: linesArr, totals },
+          archived: Boolean(totals.archived),
         };
       })
-      .filter((d) => hasRealName(d.draftName));
+      .filter((d) => hasRealName(d.draftName) && !d.archived && !deletedIds.has(d.id))
+      .map(({ archived: _a, ...d }) => d);
 
-    // When online: remote is source of truth for shared ids; local-only = offline saves not yet on server
     const remoteIds = new Set(remote.map((r) => r.id));
-    // Drop local copies that mirror remote (avoid ghosts after delete)
-    const localOnly = local.filter((l) => !remoteIds.has(l.id));
+    const localOnly = local.filter((l) => !remoteIds.has(l.id) && !deletedIds.has(l.id));
     setDrafts([...remote, ...localOnly]);
     setLoadingDrafts(false);
   }, []);
 
   const openDraft = (d: DraftRow) => {
+    if (getDeletedIds().has(d.id)) {
+      setMsg("This draft was deleted.");
+      setDrafts((prev) => prev.filter((x) => x.id !== d.id));
+      return;
+    }
     if (!hasRealName(d.draftName)) {
       setMsg("This draft has no filename and cannot be opened.");
       return;
     }
     const linesArr = d.raw?.lines ?? [];
     const totals = d.raw?.totals ?? {};
+    if (totals.archived) {
+      setMsg("This draft was deleted.");
+      return;
+    }
     setLines(linesArr);
     setDiscount(Number(totals.discount ?? 0));
     setPreparedBy(String(totals.preparedBy ?? ""));
@@ -521,19 +551,38 @@ export default function QuoteBuilder() {
 
   const deleteDraft = async (d: DraftRow) => {
     if (!confirm(`Delete draft “${d.draftName}”?`)) return;
-    // Always remove from both places so it cannot reappear after refresh
+    // 1) Hide immediately on this device
+    markDeletedId(d.id);
     deleteLocalDraft(d.id);
-    const sb = createClient();
-    if (sb) {
-      await sb.from("quotes").delete().eq("id", d.id);
-    }
+    setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     if (editingDraftId === d.id) {
       setEditingDraftId(null);
       setDraftName("");
+      setLines([]);
     }
-    setDrafts((prev) => prev.filter((x) => x.id !== d.id));
-    setMsg("Draft deleted.");
-    setTimeout(() => setMsg(""), 2000);
+
+    // 2) Soft-delete on server (works with existing UPDATE policy)
+    // 3) Try hard delete if DELETE policy is present
+    const sb = createClient();
+    if (sb) {
+      const prevTotals = (d.raw?.totals ?? {}) as Record<string, unknown>;
+      const { error: upErr } = await sb
+        .from("quotes")
+        .update({
+          status: "lost",
+          totals: { ...prevTotals, archived: true, draftName: d.draftName },
+        })
+        .eq("id", d.id);
+      const { error: delErr } = await sb.from("quotes").delete().eq("id", d.id);
+      if (upErr && delErr) {
+        setMsg(`Removed from this device. Server delete may need SQL policy (see README).`);
+      } else {
+        setMsg("Draft deleted.");
+      }
+    } else {
+      setMsg("Draft deleted on this device.");
+    }
+    setTimeout(() => setMsg(""), 3000);
   };
 
   const saveQuote = useCallback(async () => {
@@ -821,12 +870,18 @@ export default function QuoteBuilder() {
                       if (!confirm("Delete ALL named drafts from this list?")) return;
                       const sb = createClient();
                       for (const d of drafts) {
+                        markDeletedId(d.id);
                         deleteLocalDraft(d.id);
-                        if (sb) await sb.from("quotes").delete().eq("id", d.id);
+                        if (sb) {
+                          const prev = (d.raw?.totals ?? {}) as Record<string, unknown>;
+                          await sb.from("quotes").update({ status: "lost", totals: { ...prev, archived: true, draftName: d.draftName } }).eq("id", d.id);
+                          await sb.from("quotes").delete().eq("id", d.id);
+                        }
                       }
                       setDrafts([]);
                       setEditingDraftId(null);
                       setDraftName("");
+                      setLines([]);
                       setMsg("All drafts cleared.");
                       setTimeout(() => setMsg(""), 2000);
                     }}

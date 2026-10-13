@@ -33,6 +33,7 @@ drop policy if exists "settings writable" on site_settings;
 drop policy if exists "quotes open insert" on quotes;
 drop policy if exists "quotes open read" on quotes;
 drop policy if exists "quotes open update" on quotes;
+drop policy if exists "quotes open delete" on quotes;
 
 create policy "settings readable" on site_settings
   for select to anon, authenticated using (true);
@@ -44,7 +45,9 @@ create policy "quotes open insert" on quotes
 create policy "quotes open read" on quotes
   for select to anon, authenticated using (true);
 create policy "quotes open update" on quotes
-  for update to anon, authenticated using (true);
+  for update to anon, authenticated using (true) with check (true);
+create policy "quotes open delete" on quotes
+  for delete to anon, authenticated using (true);
 
 -- ─── Seed Panaflex pricing into site_settings (key = 'quote') ───
 -- Edit rates later in /buildersettings → Quote tab.
