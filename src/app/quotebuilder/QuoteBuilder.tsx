@@ -155,8 +155,20 @@ export default function QuoteBuilder() {
   const [sitePhoto, setSitePhoto] = useState<string>("");
   const [placementType, setPlacementType] = useState<"storefront" | "wall" | "bracket" | "pole" | "rooftop" | "other">("wall");
   const [placementNote, setPlacementNote] = useState("");
+  /** Position of 3D sign on site photo (percent 0–100) + relative scale */
+  const [pinPos, setPinPos] = useState({ x: 50, y: 45 });
+  const [pinScale, setPinScale] = useState(28); // % of photo width
+  const [siteMockup, setSiteMockup] = useState<string>(""); // iso capture for overlay
+  /** Wizard step 1–6 so Live 3D stays fully visible */
+  const [buildStep, setBuildStep] = useState(1);
+  /** Draft strings so size fields can be cleared and typed freely */
+  const [widthStr, setWidthStr] = useState("4");
+  const [heightStr, setHeightStr] = useState("2");
+  const [diameterStr, setDiameterStr] = useState("2");
+  const [thicknessStr, setThicknessStr] = useState("2");
   const sceneRef = useRef<SignSceneHandle>(null);
   const quoteSheetRef = useRef<HTMLElement | null>(null);
+  const sitePhotoRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -384,11 +396,60 @@ export default function QuoteBuilder() {
 
   const applyPreset = (w: number, h: number) => {
     if (isCircle) {
-      setDiameter(Math.min(circleMax ?? Infinity, Math.max(w, h)));
+      const d = Math.min(circleMax ?? Infinity, Math.max(w, h));
+      setDiameter(d);
+      setDiameterStr(String(d));
     } else {
       setWidth(w);
       setHeight(h);
+      setWidthStr(String(w));
+      setHeightStr(String(h));
     }
+  };
+
+  const parsePositive = (raw: string, fallback: number, min = 0.1) => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return Math.max(min, n);
+  };
+
+  const commitWidth = (raw: string) => {
+    setWidthStr(raw);
+    if (raw === "" || raw === ".") return;
+    const n = parsePositive(raw, width);
+    setWidth(n);
+  };
+  const commitHeight = (raw: string) => {
+    setHeightStr(raw);
+    if (raw === "" || raw === ".") return;
+    setHeight(parsePositive(raw, height));
+  };
+  const commitDiameter = (raw: string) => {
+    setDiameterStr(raw);
+    if (raw === "" || raw === ".") return;
+    const n = Math.min(circleMax ?? Infinity, parsePositive(raw, diameter));
+    setDiameter(n);
+  };
+  const commitThickness = (raw: string) => {
+    setThicknessStr(raw);
+    if (raw === "" || raw === ".") return;
+    const n = parsePositive(raw, thicknessIn, 0.25);
+    setThicknessIn(n);
+  };
+
+  const refreshSiteMockup = () => {
+    const iso = sceneRef.current?.captureIso() ?? null;
+    if (iso) setSiteMockup(iso);
+  };
+
+  const onSitePhotoClick = (e: { clientX: number; clientY: number }) => {
+    const el = sitePhotoRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
+    setPinPos({ x, y });
+    if (!siteMockup) refreshSiteMockup();
   };
 
   return (
@@ -424,37 +485,43 @@ export default function QuoteBuilder() {
       </header>
 
       <main className="mx-auto max-w-[1600px] p-4 lg:p-6 space-y-6">
-        {/* Simple progress strip — sales-friendly */}
-        <div className="no-export rounded-2xl border border-line bg-panel px-4 py-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-fog font-semibold mr-1">Quick path:</span>
-          {[
-            { n: 1, t: "Shape" },
-            { n: 2, t: "Material" },
-            { n: 3, t: "Size" },
-            { n: 4, t: "Options" },
-            { n: 5, t: "Logo" },
-            { n: 6, t: "Add → Send" },
-          ].map((s, i) => (
-            <span key={s.n} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-line">→</span>}
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gold/20 text-gold text-[10px] font-bold">{s.n}</span>
-              <span className="text-fog">{s.t}</span>
-            </span>
-          ))}
-        </div>
-
-        {/* TOP: Builder (left) + live 3D (right, sticky) */}
-        <div className="grid lg:grid-cols-[minmax(380px,0.9fr)_minmax(480px,1.1fr)] gap-6 items-start">
-          {/* LEFT — controls */}
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-line bg-panel p-5">
-              <h1 className="font-display text-2xl font-bold">Build a quote in minutes</h1>
-              <p className="text-sm text-fog mt-1">
-                Choose options on the left → watch the 3D preview update → add to quote → download and send to your client.
-              </p>
+        {/* TOP: Builder (left, one step at a time) + live 3D (right, always full) */}
+        <div className="grid lg:grid-cols-[minmax(320px,0.85fr)_minmax(480px,1.15fr)] gap-6 items-start">
+          {/* LEFT — wizard controls */}
+          <section className="space-y-3">
+            <div className="rounded-2xl border border-line bg-panel p-4">
+              <h1 className="font-display text-xl font-bold">Build a quote</h1>
+              <p className="text-xs text-fog mt-1">One step at a time — 3D stays on the right.</p>
+              {/* Compact step pills */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  { n: 1, t: "Shape" },
+                  { n: 2, t: "Material" },
+                  { n: 3, t: "Size" },
+                  { n: 4, t: "Options" },
+                  { n: 5, t: "Logo" },
+                  { n: 6, t: "Add" },
+                ].map((s) => (
+                  <button
+                    key={s.n}
+                    type="button"
+                    onClick={() => setBuildStep(s.n)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                      buildStep === s.n
+                        ? "bg-gold text-ink"
+                        : buildStep > s.n
+                          ? "bg-teal/20 text-teal border border-teal/40"
+                          : "bg-ink/40 text-fog border border-line"
+                    }`}
+                  >
+                    {s.n}. {s.t}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* 1 · Shape */}
+            {buildStep === 1 && (
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>1 · Shape</p>
@@ -474,14 +541,19 @@ export default function QuoteBuilder() {
                   </button>
                 ))}
               </div>
+              <div className="flex justify-end pt-1">
+                <button type="button" onClick={() => setBuildStep(2)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Material →</button>
+              </div>
             </div>
+            )}
 
-            {/* 2 · Service (material type) */}
+            {/* 2 · Material */}
+            {buildStep === 2 && (
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>2 · Material</p>
                 <h2 className="font-display text-lg font-bold">What kind of sign?</h2>
-                <p className="text-[11px] text-fog mt-0.5">Panaflex is the everyday choice. Lightbox if they want it lit. Ask the client if unsure.</p>
+                <p className="text-[11px] text-fog mt-0.5">Panaflex is the everyday choice. Lightbox if they want it lit.</p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {SERVICES.map((sv) => {
@@ -504,9 +576,15 @@ export default function QuoteBuilder() {
                   <input className={inputCls} value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Stainless letters on wood panel" />
                 </div>
               )}
+              <div className="flex justify-between pt-1 gap-2">
+                <button type="button" onClick={() => setBuildStep(1)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
+                <button type="button" onClick={() => setBuildStep(3)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Size →</button>
+              </div>
             </div>
+            )}
 
             {/* 3 · Dimensions */}
+            {buildStep === 3 && (
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>3 · Size</p>
@@ -525,7 +603,7 @@ export default function QuoteBuilder() {
                         <button
                           key={d}
                           type="button"
-                          onClick={() => setDiameter(d)}
+                          onClick={() => { setDiameter(d); setDiameterStr(String(d)); }}
                           className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
                             diameter === d ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
                           }`}
@@ -552,24 +630,59 @@ export default function QuoteBuilder() {
                 {isCircle ? (
                   <div className="col-span-2">
                     <label className={labelCls}>Diameter (ft){circleMax ? ` · max ${circleMax}` : ""}</label>
-                    <input type="number" min={0.1} max={circleMax} step={0.1} value={diameter}
-                      onChange={(e) => setDiameter(Math.min(circleMax ?? Infinity, Math.max(0.1, +e.target.value || 0)))} className={inputCls} />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={diameterStr}
+                      onChange={(e) => commitDiameter(e.target.value.replace(/[^0-9.]/g, ""))}
+                      onBlur={() => {
+                        const n = Math.min(circleMax ?? Infinity, parsePositive(diameterStr, diameter));
+                        setDiameter(n);
+                        setDiameterStr(String(n));
+                      }}
+                      placeholder="0"
+                      className={inputCls}
+                    />
                   </div>
                 ) : (
                   <>
                     <div>
                       <label className={labelCls}>Width (ft)</label>
-                      <input type="number" min={0.1} step={0.1} value={width} onChange={(e) => setWidth(Math.max(0.1, +e.target.value || 0))} className={inputCls} />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={widthStr}
+                        onChange={(e) => commitWidth(e.target.value.replace(/[^0-9.]/g, ""))}
+                        onBlur={() => { const n = parsePositive(widthStr, width); setWidth(n); setWidthStr(String(n)); }}
+                        placeholder="0"
+                        className={inputCls}
+                      />
                     </div>
                     <div>
                       <label className={labelCls}>Height (ft)</label>
-                      <input type="number" min={0.1} step={0.1} value={height} onChange={(e) => setHeight(Math.max(0.1, +e.target.value || 0))} className={inputCls} />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={heightStr}
+                        onChange={(e) => commitHeight(e.target.value.replace(/[^0-9.]/g, ""))}
+                        onBlur={() => { const n = parsePositive(heightStr, height); setHeight(n); setHeightStr(String(n)); }}
+                        placeholder="0"
+                        className={inputCls}
+                      />
                     </div>
                   </>
                 )}
                 <div>
                   <label className={labelCls}>Depth (in)</label>
-                  <input type="number" min={0.25} step={0.25} value={thicknessIn} onChange={(e) => setThicknessIn(Math.max(0.25, +e.target.value || 0))} className={inputCls} />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={thicknessStr}
+                    onChange={(e) => commitThickness(e.target.value.replace(/[^0-9.]/g, ""))}
+                    onBlur={() => { const n = parsePositive(thicknessStr, thicknessIn, 0.25); setThicknessIn(n); setThicknessStr(String(n)); }}
+                    placeholder="0"
+                    className={inputCls}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -586,9 +699,15 @@ export default function QuoteBuilder() {
                   <input className="bg-transparent text-center w-full outline-none font-bold" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, +e.target.value || 1))} />
                 </div>
               </div>
+              <div className="flex justify-between pt-1 gap-2">
+                <button type="button" onClick={() => setBuildStep(2)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
+                <button type="button" onClick={() => setBuildStep(4)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Options →</button>
+              </div>
             </div>
+            )}
 
-            {/* 4 · Build */}
+            {/* 4 · Options */}
+            {buildStep === 4 && (
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>4 · Options</p>
@@ -666,14 +785,20 @@ export default function QuoteBuilder() {
                   <p className="mt-2 text-[11px] text-fog">Steel supports are placed at the back of the signage.</p>
                 )}
               </div>
+              <div className="flex justify-between pt-1 gap-2">
+                <button type="button" onClick={() => setBuildStep(3)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
+                <button type="button" onClick={() => setBuildStep(5)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Logo →</button>
+              </div>
             </div>
+            )}
 
-            {/* 5 · Branding */}
+            {/* 5 · Logo */}
+            {buildStep === 5 && (
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>5 · Logo (optional)</p>
                 <h2 className="font-display text-lg font-bold">Put the client’s logo on the preview</h2>
-                <p className="text-[11px] text-fog mt-0.5">Upload or paste a link. Looks great when you send the quote image.</p>
+                <p className="text-[11px] text-fog mt-0.5">Skip if you don’t have a logo yet — you can still quote.</p>
               </div>
               <div className="grid sm:grid-cols-[1fr_auto] gap-3">
                 <input className={inputCls} value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="Paste logo image link (optional)" />
@@ -688,9 +813,15 @@ export default function QuoteBuilder() {
                   <button onClick={() => { setLogoUrl(""); setLogoPreview(""); }} className="text-xs text-red-500">Clear</button>
                 </div>
               )}
+              <div className="flex justify-between pt-1 gap-2">
+                <button type="button" onClick={() => setBuildStep(4)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
+                <button type="button" onClick={() => setBuildStep(6)} className="rounded-full bg-gold text-ink px-5 py-2 text-sm font-bold">Next · Add →</button>
+              </div>
             </div>
+            )}
 
-            {/* 6 · Notes + Add */}
+            {/* 6 · Add */}
+            {buildStep === 6 && (
             <div className="rounded-2xl border border-gold/40 bg-panel p-5 space-y-3 ring-1 ring-gold/20">
               <div>
                 <p className={stepCls}>6 · Add to quote</p>
@@ -702,11 +833,16 @@ export default function QuoteBuilder() {
                   <span className="block">{areaSqft.toFixed(2)} sqft · qty {qty}</span>
                   {live.hasTbd && <span className="text-amber-300">Price TBD — check Builder Settings rates</span>}
                 </div>
-                <button onClick={addLine} className="rounded-full bg-gold text-ink px-7 py-3 font-bold text-base hover:bg-gold-dim shadow-lg shadow-gold/20">
+                <button onClick={() => { addLine(); refreshSiteMockup(); }} className="rounded-full bg-gold text-ink px-7 py-3 font-bold text-base hover:bg-gold-dim shadow-lg shadow-gold/20">
                   Add to Quote · ₱{fmt(live.unitCost * qty)}
                 </button>
               </div>
+              <div className="flex justify-between pt-1 gap-2">
+                <button type="button" onClick={() => setBuildStep(5)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
+                <button type="button" onClick={() => setBuildStep(1)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">New sign · start over</button>
+              </div>
             </div>
+            )}
 
             {msg && <div className="rounded-xl border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">{msg}</div>}
           </section>
@@ -774,41 +910,76 @@ export default function QuoteBuilder() {
           </aside>
         </div>
 
-        {/* ── Site photo & placement — optional but impressive for clients ── */}
+        {/* ── Site photo + place the 3D sign on it ── */}
         <div className="no-export mx-auto w-full max-w-[240mm] mb-4 rounded-2xl border border-line bg-white p-5 shadow-sm text-ink">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
             <div>
               <h3 className="text-base font-bold flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-teal/15 text-teal text-xs font-bold">+</span>
-                Show the client where it goes
+                Place the sign on the real photo
               </h3>
               <p className="text-xs text-gray-500 mt-1 max-w-xl">
-                Optional but powerful: snap a photo of their store / wall, pick how it mounts, and it appears on the quote you send. Helps close the deal.
+                Upload a photo of the client’s wall or storefront, then <strong>tap where the sign goes</strong>. The 3D mockup sits on that point so they can see it in place.
               </p>
             </div>
             {!sitePhoto && (
               <span className="text-[10px] uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Optional</span>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Photo of the place</label>
-              <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-3 py-8 cursor-pointer hover:border-teal hover:bg-teal/5 transition min-h-[120px]">
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => onSitePhotoFile(e.target.files?.[0] ?? null)} />
-                {sitePhoto ? (
-                  <img src={sitePhoto} alt="Site" className="max-h-32 max-w-full object-contain rounded" />
-                ) : (
-                  <span className="text-sm text-gray-400 text-center px-2">Tap to upload<br /><span className="text-xs">storefront, wall, or site photo</span></span>
-                )}
-              </label>
-              {sitePhoto && (
-                <button onClick={() => setSitePhoto("")} className="mt-1.5 text-xs text-red-500 hover:underline">Remove photo</button>
-              )}
-            </div>
+
+          {!sitePhoto ? (
+            <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-3 py-10 cursor-pointer hover:border-teal hover:bg-teal/5 transition">
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { onSitePhotoFile(e.target.files?.[0] ?? null); setTimeout(refreshSiteMockup, 300); }} />
+              <span className="text-sm text-gray-400 text-center">Tap to upload storefront / wall photo</span>
+            </label>
+          ) : (
             <div className="space-y-3">
+              <div
+                ref={sitePhotoRef}
+                onClick={onSitePhotoClick}
+                className="relative w-full rounded-xl overflow-hidden border border-gray-300 cursor-crosshair bg-gray-100 select-none"
+                style={{ minHeight: 200 }}
+              >
+                <img src={sitePhoto} alt="Site" className="w-full h-auto block max-h-[360px] object-contain mx-auto" />
+                {/* 3D sign overlay at pin */}
+                {(siteMockup || lines[lines.length - 1]?.renders.iso) && (
+                  <img
+                    src={siteMockup || lines[lines.length - 1]?.renders.iso || ""}
+                    alt="Sign placement"
+                    className="absolute pointer-events-none drop-shadow-lg"
+                    style={{
+                      left: `${pinPos.x}%`,
+                      top: `${pinPos.y}%`,
+                      width: `${pinScale}%`,
+                      transform: "translate(-50%, -50%)",
+                      maxHeight: "45%",
+                      objectFit: "contain",
+                    }}
+                  />
+                )}
+                {/* Pin marker */}
+                <div
+                  className="absolute w-4 h-4 rounded-full border-2 border-white bg-teal shadow-md pointer-events-none"
+                  style={{ left: `${pinPos.x}%`, top: `${pinPos.y}%`, transform: "translate(-50%, -50%)" }}
+                />
+              </div>
+              <p className="text-[11px] text-gray-500">Tap the photo to move the pin. Use the slider to resize the sign on the photo.</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs text-gray-600 flex items-center gap-2">
+                  Sign size on photo
+                  <input type="range" min={10} max={60} value={pinScale} onChange={(e) => setPinScale(+e.target.value)} className="w-32" />
+                  <span className="font-semibold">{pinScale}%</span>
+                </label>
+                <button type="button" onClick={refreshSiteMockup} className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold hover:bg-gray-50">
+                  Refresh 3D on photo
+                </button>
+                <button type="button" onClick={() => { setSitePhoto(""); setSiteMockup(""); }} className="text-xs text-red-500 hover:underline">
+                  Remove photo
+                </button>
+              </div>
               <div>
-                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Where will it be installed?</label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">How it mounts</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {(["storefront", "wall", "bracket", "pole", "rooftop", "other"] as const).map((p) => (
                     <button
                       key={p}
@@ -825,17 +996,14 @@ export default function QuoteBuilder() {
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Extra detail (optional)</label>
-                <input
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
-                  value={placementNote}
-                  onChange={(e) => setPlacementNote(e.target.value)}
-                  placeholder="e.g. above the main door, facing the street"
-                />
-              </div>
+              <input
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                value={placementNote}
+                onChange={(e) => setPlacementNote(e.target.value)}
+                placeholder="e.g. above the main door, facing the street"
+              />
             </div>
-          </div>
+          )}
         </div>
 
         {/* BOTTOM — client-ready proposal sheet (export target) */}
@@ -935,21 +1103,37 @@ export default function QuoteBuilder() {
               })
             )}
 
-            {/* Site photo on sheet — plain language */}
+            {/* Site photo on sheet — with 3D placed on photo */}
             {(sitePhoto || placementNote) && (
               <div className="rounded-xl border border-gray-300 overflow-hidden">
                 <div className="bg-[#f0f4f8] px-3 py-2 border-b border-gray-300">
                   <p className="text-sm font-bold">Where it will be installed</p>
                 </div>
                 <div className="grid grid-cols-12 gap-0">
-                  <div className="col-span-5 p-2 bg-[#fafbfc] border-r border-gray-200">
+                  <div className="col-span-7 p-2 bg-[#fafbfc] border-r border-gray-200">
                     {sitePhoto ? (
-                      <img src={sitePhoto} alt="Site" className="w-full h-36 object-cover rounded-lg border border-gray-100" />
+                      <div className="relative w-full rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
+                        <img src={sitePhoto} alt="Site" className="w-full h-auto max-h-48 object-contain mx-auto block" />
+                        {(siteMockup || lines[lines.length - 1]?.renders.iso) && (
+                          <img
+                            src={siteMockup || lines[lines.length - 1]?.renders.iso || ""}
+                            alt="Sign on site"
+                            className="absolute"
+                            style={{
+                              left: `${pinPos.x}%`,
+                              top: `${pinPos.y}%`,
+                              width: `${pinScale}%`,
+                              transform: "translate(-50%, -50%)",
+                              objectFit: "contain",
+                            }}
+                          />
+                        )}
+                      </div>
                     ) : (
                       <div className="h-36 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">No photo</div>
                     )}
                   </div>
-                  <div className="col-span-7 p-3 text-[12px] space-y-2">
+                  <div className="col-span-5 p-3 text-[12px] space-y-2">
                     <p>
                       <span className="text-gray-500 text-[9px] uppercase tracking-wider">Installation</span><br />
                       <strong className="text-base">{PLACEMENT_LABELS[placementType]}</strong>
@@ -961,7 +1145,7 @@ export default function QuoteBuilder() {
                       </p>
                     )}
                     <p className="text-[10px] text-gray-500 border-t border-gray-100 pt-1.5">
-                      Final position confirmed on site before install.
+                      Sign shown in proposed position. Final measure on site.
                     </p>
                   </div>
                 </div>

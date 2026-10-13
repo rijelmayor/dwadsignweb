@@ -66,7 +66,7 @@ function DimLine({
   label,
   offset = [0, 0, 0] as [number, number, number],
   color = "#111111",
-  fontSize = 0.32,
+  fontSize = 0.16,
 }: {
   start: [number, number, number];
   end: [number, number, number];
@@ -80,47 +80,44 @@ function DimLine({
   const mid: [number, number, number] = [(s[0] + e[0]) / 2, (s[1] + e[1]) / 2, (s[2] + e[2]) / 2];
   const dx = e[0] - s[0], dy = e[1] - s[1], dz = e[2] - s[2];
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-  const ax = (dx / len) * 0.16, ay = (dy / len) * 0.16, az = (dz / len) * 0.16;
-
-  // Extension ticks at ends (perpendicular)
-  const px = -dy / len * 0.1, py = dx / len * 0.1;
+  const ax = (dx / len) * 0.08, ay = (dy / len) * 0.08, az = (dz / len) * 0.08;
+  const px = -dy / len * 0.05, py = dx / len * 0.05;
+  const lw = 1.6;
 
   return (
     <group>
-      {/* Main dimension line */}
-      <Line points={[s, e]} color={color} lineWidth={3.5} />
-      {/* Arrow heads */}
+      <Line points={[s, e]} color={color} lineWidth={lw} />
       <Line
         points={[
-          [s[0] + ax + ay * 0.5, s[1] + ay - ax * 0.5, s[2] + az],
+          [s[0] + ax + ay * 0.45, s[1] + ay - ax * 0.45, s[2] + az],
           s,
-          [s[0] + ax - ay * 0.5, s[1] + ay + ax * 0.5, s[2] + az],
+          [s[0] + ax - ay * 0.45, s[1] + ay + ax * 0.45, s[2] + az],
         ]}
         color={color}
-        lineWidth={3.5}
+        lineWidth={lw}
       />
       <Line
         points={[
-          [e[0] - ax + ay * 0.5, e[1] - ay - ax * 0.5, e[2] - az],
+          [e[0] - ax + ay * 0.45, e[1] - ay - ax * 0.45, e[2] - az],
           e,
-          [e[0] - ax - ay * 0.5, e[1] - ay + ax * 0.5, e[2] - az],
+          [e[0] - ax - ay * 0.45, e[1] - ay + ax * 0.45, e[2] - az],
         ]}
         color={color}
-        lineWidth={3.5}
+        lineWidth={lw}
       />
-      {/* End ticks */}
-      <Line points={[[s[0] + px, s[1] + py, s[2]], [s[0] - px, s[1] - py, s[2]]]} color={color} lineWidth={2.5} />
-      <Line points={[[e[0] + px, e[1] + py, e[2]], [e[0] - px, e[1] - py, e[2]]]} color={color} lineWidth={2.5} />
-      {/* Large black label — always faces the camera so it reads in every captured view */}
+      <Line points={[[s[0] + px, s[1] + py, s[2]], [s[0] - px, s[1] - py, s[2]]]} color={color} lineWidth={1.2} />
+      <Line points={[[e[0] + px, e[1] + py, e[2]], [e[0] - px, e[1] - py, e[2]]]} color={color} lineWidth={1.2} />
+      {/* Compact label with white pad for readability */}
       <FaceCam position={mid}>
         <Text
-          position={[0, 0, 0.04]}
+          position={[0, 0, 0.03]}
           fontSize={fontSize}
-          color="#000000"
+          color="#0a0a0a"
           anchorX="center"
           anchorY="middle"
-          outlineWidth={0.028}
+          outlineWidth={fontSize * 0.12}
           outlineColor="#ffffff"
+          fillOpacity={1}
         >
           {label}
         </Text>
@@ -379,8 +376,8 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   const inset = isLightbox ? Math.min(0.08, Math.min(w, h) * 0.08) : 0;
   const aw = w - inset * 2;
   const ah = h - inset * 2;
-  const dimOff = Math.max(0.55, Math.min(w, h) * 0.18);
-  const dimFont = Math.max(0.28, Math.min(w, h) * 0.1);
+  const dimOff = Math.max(0.28, Math.min(w, h) * 0.1);
+  const dimFont = Math.max(0.12, Math.min(0.22, Math.min(w, h) * 0.055));
 
   const decor = (
     <>
@@ -425,11 +422,10 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
 
       {showDimensions && (
         <group>
-          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -dimOff, 0.08]} label={`W ${fmtFt(w)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[-w / 2, h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[0, dimOff, 0.08]} label={`W ${fmtFt(w)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-dimOff, 0, 0.08]} label={`H ${fmtFt(h)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[w / 2, -h / 2, depth / 2]} end={[w / 2, h / 2, depth / 2]} offset={[dimOff, 0, 0.08]} label={`H ${fmtFt(h)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[dimOff * 0.65, -dimOff * 0.45, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#000000" fontSize={dimFont * 0.9} />
+          {/* One label per axis — cleaner, easier to read */}
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -dimOff, 0.06]} label={`W ${fmtFt(w)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-dimOff, 0, 0.06]} label={`H ${fmtFt(h)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#111" fontSize={dimFont * 0.92} />
         </group>
       )}
     </group>
@@ -441,8 +437,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
   const r = d / 2;
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
   const withLight = lit ?? traits.light !== "none";
-  const dimOff = Math.max(0.55, d * 0.18);
-  const dimFont = Math.max(0.28, d * 0.1);
+  const dimOff = Math.max(0.28, d * 0.1);
+  const dimFont = Math.max(0.12, Math.min(0.22, d * 0.055));
   const faceR = r * 0.955;
   const rotX: [number, number, number] = [Math.PI / 2, 0, 0];
   const look = lookOf(service);
@@ -515,9 +511,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
 
       {showDimensions && (
         <group>
-          <DimLine start={[-r, -r, depth / 2]} end={[r, -r, depth / 2]} offset={[0, -dimOff, 0.08]} label={`Ø ${fmtFt(d)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[-r, -r, depth / 2]} end={[-r, r, depth / 2]} offset={[-dimOff, 0, 0.08]} label={`Ø ${fmtFt(d)}`} color="#000000" fontSize={dimFont} />
-          <DimLine start={[r, -r, -depth / 2]} end={[r, -r, depth / 2]} offset={[dimOff * 0.65, -dimOff * 0.45, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#000000" fontSize={dimFont * 0.9} />
+          <DimLine start={[-r, -r, depth / 2]} end={[r, -r, depth / 2]} offset={[0, -dimOff, 0.06]} label={`Ø ${fmtFt(d)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[r, -r, -depth / 2]} end={[r, -r, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#111" fontSize={dimFont * 0.92} />
         </group>
       )}
     </group>
@@ -569,8 +564,8 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
   const below = belowFor(props.traits.mount, hh);
   // Frame the whole composition (sign + pole / rooftop supports), not just the sign
   const maxDim = Math.max(widthFt, hh + below, 1);
-  // Pull camera back enough so big dim labels fit in frame
-  const camDist = maxDim * 2.6 + 2.2;
+  // Framing — labels are compact so we can stay closer
+  const camDist = maxDim * 2.15 + 1.6;
   const apiRef = useRef<CaptureApi | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -617,16 +612,16 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
       </div>
 
       {props.showDimensions !== false && (
-        <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-2 justify-center pointer-events-none">
+        <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1.5 justify-center pointer-events-none">
           {dimLabel ? (
-            <span className="rounded bg-white border-2 border-black px-3 py-1.5 text-xs font-bold text-black shadow">{dimLabel}</span>
+            <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">{dimLabel}</span>
           ) : (
             <>
-              <span className="rounded bg-white border-2 border-black px-3 py-1.5 text-xs font-bold text-black shadow">W {fmtFt(widthFt)}</span>
-              <span className="rounded bg-white border-2 border-black px-3 py-1.5 text-xs font-bold text-black shadow">H {fmtFt(heightFt)}</span>
+              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">W {fmtFt(widthFt)}</span>
+              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">H {fmtFt(heightFt)}</span>
             </>
           )}
-          <span className="rounded bg-white border-2 border-black px-3 py-1.5 text-xs font-bold text-black shadow">
+          <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">
             T {thickness}&quot;
           </span>
         </div>
