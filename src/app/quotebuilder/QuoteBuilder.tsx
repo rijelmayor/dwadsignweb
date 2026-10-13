@@ -151,6 +151,10 @@ export default function QuoteBuilder() {
   const [exporting, setExporting] = useState(false);
   const [msg, setMsg] = useState("");
   const [supabaseOk, setSupabaseOk] = useState<boolean | null>(null);
+  /** Site photo of the real location + where the sign will be placed */
+  const [sitePhoto, setSitePhoto] = useState<string>("");
+  const [placementType, setPlacementType] = useState<"storefront" | "wall" | "bracket" | "pole" | "rooftop" | "other">("wall");
+  const [placementNote, setPlacementNote] = useState("");
   const sceneRef = useRef<SignSceneHandle>(null);
   const quoteSheetRef = useRef<HTMLElement | null>(null);
 
@@ -242,6 +246,22 @@ export default function QuoteBuilder() {
   const onLogoFile = (file: File | null) => {
     if (!file) { setLogoPreview(""); return; }
     const reader = new FileReader(); reader.onload = () => setLogoPreview(String(reader.result || "")); reader.readAsDataURL(file);
+  };
+
+  const onSitePhotoFile = (file: File | null) => {
+    if (!file) { setSitePhoto(""); return; }
+    const reader = new FileReader();
+    reader.onload = () => setSitePhoto(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  };
+
+  const PLACEMENT_LABELS: Record<string, string> = {
+    storefront: "Storefront / Façade",
+    wall: "Wall-mounted (flush)",
+    bracket: "Wall with bracket",
+    pole: "Pole / Pylon",
+    rooftop: "Rooftop support",
+    other: "Other / Custom",
   };
 
   const addLine = () => {
@@ -350,53 +370,96 @@ export default function QuoteBuilder() {
   const stepCls = "text-[10px] uppercase tracking-[0.2em] text-gold font-bold";
   const cardCls = "rounded-2xl border border-line bg-panel p-5 space-y-4";
   const shapeLabel = (sh: Shape) => (sh === "circle" ? "Circle" : "Rectangle");
-  const angleTag = "text-[9px] font-bold uppercase tracking-wider text-black px-2 pt-1.5";
+
+  /** Common sizes sales teams quote often (ft) */
+  const SIZE_PRESETS: { label: string; w: number; h: number }[] = [
+    { label: "2×1", w: 2, h: 1 },
+    { label: "3×2", w: 3, h: 2 },
+    { label: "4×2", w: 4, h: 2 },
+    { label: "4×3", w: 4, h: 3 },
+    { label: "6×3", w: 6, h: 3 },
+    { label: "8×4", w: 8, h: 4 },
+  ];
+  const CIRCLE_PRESETS = [1, 1.5, 2, 2.5, 3];
+
+  const applyPreset = (w: number, h: number) => {
+    if (isCircle) {
+      setDiameter(Math.min(circleMax ?? Infinity, Math.max(w, h)));
+    } else {
+      setWidth(w);
+      setHeight(h);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-ink text-white">
-      <header className="sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-line bg-ink/95 backdrop-blur-md">
         <div className="mx-auto max-w-[1600px] px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Link href="/"><Image src="/logo-mark.png" alt="DW" width={120} height={58} className="h-8 w-auto" /></Link>
-            <span className="font-display font-bold text-sm hidden sm:inline">
-              Quote Builder <span className="text-fog font-normal">· {site.name}</span>
+            <span className="font-display font-bold text-sm hidden sm:inline truncate">
+              Quote Builder <span className="text-fog font-normal">· for sales</span>
             </span>
             {supabaseOk === false && (
-              <span className="text-[10px] rounded bg-amber-500/20 text-amber-300 px-2 py-0.5 border border-amber-500/40">Supabase offline</span>
+              <span className="text-[10px] rounded bg-amber-500/20 text-amber-300 px-2 py-0.5 border border-amber-500/40 shrink-0">Offline mode</span>
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <Link href="/buildersettings" className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">
-              Builder Settings
+            {lines.length > 0 && (
+              <span className="hidden md:inline text-xs text-fog mr-1">
+                {lines.length} item{lines.length > 1 ? "s" : ""} · <strong className="text-gold">₱{fmt(grand)}</strong>
+              </span>
+            )}
+            <Link href="/buildersettings" className="rounded-full border border-line px-3 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">
+              Settings
             </Link>
-            <button onClick={downloadMockupOnly} className="rounded-full border border-line px-4 py-2 text-xs font-semibold text-fog hover:border-teal hover:text-white">
-              3D Render JPG
+            <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gold/50 px-3 py-2 text-xs font-bold text-gold hover:bg-gold/10 disabled:opacity-40">
+              Send JPG
             </button>
-            <button disabled={exporting} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gold/50 px-4 py-2 text-xs font-bold text-gold hover:bg-gold/10 disabled:opacity-50">
-              Download JPG
-            </button>
-            <button disabled={exporting} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-4 py-2 text-xs font-bold hover:bg-gold-dim disabled:opacity-50">
-              {exporting ? "Exporting…" : "Download PNG"}
+            <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-4 py-2 text-xs font-bold hover:bg-gold-dim disabled:opacity-40">
+              {exporting ? "…" : "Send PNG"}
             </button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1600px] p-4 lg:p-6 space-y-6">
+        {/* Simple progress strip — sales-friendly */}
+        <div className="no-export rounded-2xl border border-line bg-panel px-4 py-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-fog font-semibold mr-1">Quick path:</span>
+          {[
+            { n: 1, t: "Shape" },
+            { n: 2, t: "Material" },
+            { n: 3, t: "Size" },
+            { n: 4, t: "Options" },
+            { n: 5, t: "Logo" },
+            { n: 6, t: "Add → Send" },
+          ].map((s, i) => (
+            <span key={s.n} className="flex items-center gap-1.5">
+              {i > 0 && <span className="text-line">→</span>}
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gold/20 text-gold text-[10px] font-bold">{s.n}</span>
+              <span className="text-fog">{s.t}</span>
+            </span>
+          ))}
+        </div>
+
         {/* TOP: Builder (left) + live 3D (right, sticky) */}
         <div className="grid lg:grid-cols-[minmax(380px,0.9fr)_minmax(480px,1.1fr)] gap-6 items-start">
           {/* LEFT — controls */}
           <section className="space-y-4">
             <div className="rounded-2xl border border-line bg-panel p-5">
-              <h1 className="font-display text-2xl font-bold">Sign Builder</h1>
-              <p className="text-sm text-fog mt-1">Pick the shape, choose the service, then set size. Live 3D updates on the right.</p>
+              <h1 className="font-display text-2xl font-bold">Build a quote in minutes</h1>
+              <p className="text-sm text-fog mt-1">
+                Choose options on the left → watch the 3D preview update → add to quote → download and send to your client.
+              </p>
             </div>
 
             {/* 1 · Shape */}
             <div className={cardCls}>
               <div>
                 <p className={stepCls}>1 · Shape</p>
-                <h2 className="font-display text-lg font-bold">What are we building today?</h2>
+                <h2 className="font-display text-lg font-bold">Rectangle or circle?</h2>
+                <p className="text-[11px] text-fog mt-0.5">Most signs are rectangular. Circles are great for logos and lightboxes.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {(["rect", "circle"] as Shape[]).map((sh) => (
@@ -416,8 +479,9 @@ export default function QuoteBuilder() {
             {/* 2 · Service (material type) */}
             <div className={cardCls}>
               <div>
-                <p className={stepCls}>2 · Service</p>
-                <h2 className="font-display text-lg font-bold">Material type</h2>
+                <p className={stepCls}>2 · Material</p>
+                <h2 className="font-display text-lg font-bold">What kind of sign?</h2>
+                <p className="text-[11px] text-fog mt-0.5">Panaflex is the everyday choice. Lightbox if they want it lit. Ask the client if unsure.</p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {SERVICES.map((sv) => {
@@ -442,13 +506,48 @@ export default function QuoteBuilder() {
               )}
             </div>
 
-            {/* 3 · Dimensions — format follows the shape + the selected service */}
+            {/* 3 · Dimensions */}
             <div className={cardCls}>
               <div>
-                <p className={stepCls}>3 · Dimension</p>
-                <h2 className="font-display text-lg font-bold">{def.name} · {isCircle ? "Diameter" : "Width × Height"}</h2>
-                {circleMax && <p className="text-[11px] text-fog mt-0.5">{def.name} circle: maximum {circleMax} ft diameter.</p>}
+                <p className={stepCls}>3 · Size</p>
+                <h2 className="font-display text-lg font-bold">How big is the sign?</h2>
+                <p className="text-[11px] text-fog mt-0.5">
+                  Tap a common size, or type exact feet. {circleMax ? `Circle max ${circleMax} ft.` : "Thickness is usually left at default."}
+                </p>
               </div>
+
+              {/* Quick size presets — sales love these */}
+              <div>
+                <label className={labelCls}>Common sizes (tap to apply)</label>
+                <div className="flex flex-wrap gap-2">
+                  {isCircle
+                    ? CIRCLE_PRESETS.filter((d) => !circleMax || d <= circleMax).map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setDiameter(d)}
+                          className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
+                            diameter === d ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
+                          }`}
+                        >
+                          Ø {d} ft
+                        </button>
+                      ))
+                    : SIZE_PRESETS.map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => applyPreset(p.w, p.h)}
+                          className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
+                            width === p.w && height === p.h ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
+                          }`}
+                        >
+                          {p.label} ft
+                        </button>
+                      ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 {isCircle ? (
                   <div className="col-span-2">
@@ -459,17 +558,17 @@ export default function QuoteBuilder() {
                 ) : (
                   <>
                     <div>
-                      <label className={labelCls}>Height (ft)</label>
-                      <input type="number" min={0.1} step={0.1} value={height} onChange={(e) => setHeight(Math.max(0.1, +e.target.value || 0))} className={inputCls} />
-                    </div>
-                    <div>
                       <label className={labelCls}>Width (ft)</label>
                       <input type="number" min={0.1} step={0.1} value={width} onChange={(e) => setWidth(Math.max(0.1, +e.target.value || 0))} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Height (ft)</label>
+                      <input type="number" min={0.1} step={0.1} value={height} onChange={(e) => setHeight(Math.max(0.1, +e.target.value || 0))} className={inputCls} />
                     </div>
                   </>
                 )}
                 <div>
-                  <label className={labelCls}>Thickness (in)</label>
+                  <label className={labelCls}>Depth (in)</label>
                   <input type="number" min={0.25} step={0.25} value={thicknessIn} onChange={(e) => setThicknessIn(Math.max(0.25, +e.target.value || 0))} className={inputCls} />
                 </div>
               </div>
@@ -479,11 +578,11 @@ export default function QuoteBuilder() {
                   <strong>{areaSqft.toFixed(2)} sqft</strong>
                 </div>
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
-                  <span className="text-fog block">Thickness</span>
+                  <span className="text-fog block">Depth</span>
                   <strong>{thicknessIn}&quot;</strong>
                 </div>
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
-                  <span className="text-fog block">Qty</span>
+                  <span className="text-fog block">How many?</span>
                   <input className="bg-transparent text-center w-full outline-none font-bold" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, +e.target.value || 1))} />
                 </div>
               </div>
@@ -492,8 +591,9 @@ export default function QuoteBuilder() {
             {/* 4 · Build */}
             <div className={cardCls}>
               <div>
-                <p className={stepCls}>4 · Build</p>
-                <h2 className="font-display text-lg font-bold">Face, lighting, printing &amp; mounting</h2>
+                <p className={stepCls}>4 · Options</p>
+                <h2 className="font-display text-lg font-bold">Lighting, print &amp; how it mounts</h2>
+                <p className="text-[11px] text-fog mt-0.5">Most clients care about light on/off and where it hangs. Defaults are already sensible.</p>
               </div>
 
               {isLightbox && (
@@ -511,7 +611,7 @@ export default function QuoteBuilder() {
               )}
 
               <div>
-                <label className={labelCls}>Face</label>
+                <label className={labelCls}>One side or both?</label>
                 <div className="grid grid-cols-2 gap-2">
                   {SIDES_OPTIONS.map(([id, name, sub]) => (
                     <button key={id} onClick={() => setSides(id)} className={`rounded-xl border px-3 py-3 text-left transition ${sides === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
@@ -523,7 +623,7 @@ export default function QuoteBuilder() {
               </div>
 
               <div>
-                <label className={labelCls}>Lighting</label>
+                <label className={labelCls}>Does it light up?</label>
                 <div className="grid grid-cols-2 gap-2">
                   {LIGHTING_OPTIONS.map(([id, name]) => (
                     <button key={id} onClick={() => setLighting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${lighting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
@@ -535,7 +635,7 @@ export default function QuoteBuilder() {
 
               {def.printing && (
                 <div>
-                  <label className={labelCls}>Printing</label>
+                  <label className={labelCls}>How is the artwork printed?</label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {PRINTING_OPTIONS.map(([id, name]) => (
                       <button key={id} onClick={() => setPrinting(id)} className={`rounded-xl border px-3 py-3 text-sm font-semibold text-left transition ${printing === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
@@ -547,7 +647,7 @@ export default function QuoteBuilder() {
               )}
 
               <div>
-                <label className={labelCls}>Mounting</label>
+                <label className={labelCls}>How does it attach?</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(["wall", "bracket", "pole", "rooftop"] as Mount[]).map((id) => (
                     <button key={id} onClick={() => setMounting(id)} className={`rounded-xl border px-2 py-2.5 text-center transition flex flex-col items-center gap-1 ${mounting === id ? "border-teal bg-teal text-ink" : "border-line bg-ink/30 text-fog hover:border-teal"}`}>
@@ -571,13 +671,14 @@ export default function QuoteBuilder() {
             {/* 5 · Branding */}
             <div className={cardCls}>
               <div>
-                <p className={stepCls}>5 · Branding</p>
-                <h2 className="font-display text-lg font-bold">Client logo / design</h2>
+                <p className={stepCls}>5 · Logo (optional)</p>
+                <h2 className="font-display text-lg font-bold">Put the client’s logo on the preview</h2>
+                <p className="text-[11px] text-fog mt-0.5">Upload or paste a link. Looks great when you send the quote image.</p>
               </div>
               <div className="grid sm:grid-cols-[1fr_auto] gap-3">
-                <input className={inputCls} value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="Logo / design image URL (optional)" />
+                <input className={inputCls} value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="Paste logo image link (optional)" />
                 <label className="rounded-xl border border-line bg-ink/30 px-4 py-2.5 text-sm font-semibold cursor-pointer text-center hover:border-teal">
-                  Upload
+                  Upload logo
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => onLogoFile(e.target.files?.[0] ?? null)} />
                 </label>
               </div>
@@ -589,14 +690,20 @@ export default function QuoteBuilder() {
               )}
             </div>
 
-            {/* 6 · Notes */}
-            <div className="rounded-2xl border border-line bg-panel p-5 space-y-3">
-              <p className={stepCls}>6 · Notes</p>
-              <textarea className={`${inputCls} min-h-20`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional fabrication / installation note" />
+            {/* 6 · Notes + Add */}
+            <div className="rounded-2xl border border-gold/40 bg-panel p-5 space-y-3 ring-1 ring-gold/20">
+              <div>
+                <p className={stepCls}>6 · Add to quote</p>
+                <h2 className="font-display text-lg font-bold">Ready? Add this sign</h2>
+              </div>
+              <textarea className={`${inputCls} min-h-16`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the client (e.g. includes install, rush job…)" />
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-xs text-fog">{areaSqft.toFixed(2)} sqft × rates + {qs.markupPct}% markup</div>
-                <button onClick={addLine} className="rounded-full bg-gold text-ink px-6 py-2.5 font-bold hover:bg-gold-dim">
-                  Add to Quote · ₱{fmt(live.unitCost)}
+                <div className="text-xs text-fog">
+                  <span className="block">{areaSqft.toFixed(2)} sqft · qty {qty}</span>
+                  {live.hasTbd && <span className="text-amber-300">Price TBD — check Builder Settings rates</span>}
+                </div>
+                <button onClick={addLine} className="rounded-full bg-gold text-ink px-7 py-3 font-bold text-base hover:bg-gold-dim shadow-lg shadow-gold/20">
+                  Add to Quote · ₱{fmt(live.unitCost * qty)}
                 </button>
               </div>
             </div>
@@ -640,120 +747,288 @@ export default function QuoteBuilder() {
               </div>
             </div>
             <p className="text-xs text-fog text-center px-2">
-              Black dimension labels · full-bleed logo · bulb = lit. Rotate with mouse. Add to Quote captures front, side &amp; 3D.
+              Drag to rotate the preview. When you hit <strong className="text-white">Add to Quote</strong>, we save front, side &amp; 3D views with sizes for the client sheet.
             </p>
+
+            {/* Live price card — always visible while building */}
+            <div className="rounded-2xl border border-gold/30 bg-panel p-4 space-y-2">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-gold font-bold">This sign right now</p>
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className="text-2xl font-bold text-gold leading-none">₱{fmt(live.unitCost * qty)}</p>
+                  <p className="text-[11px] text-fog mt-1">
+                    {qty > 1 ? `${qty} × ₱${fmt(live.unitCost)}` : "per unit"} · {areaSqft.toFixed(1)} sqft
+                  </p>
+                </div>
+                {lines.length > 0 && (
+                  <div className="text-right">
+                    <p className="text-[10px] text-fog uppercase">Quote total</p>
+                    <p className="text-lg font-bold">₱{fmt(grand)}</p>
+                  </div>
+                )}
+              </div>
+              {live.hasTbd && (
+                <p className="text-[11px] text-amber-300">Rates not set — open Settings to fill prices.</p>
+              )}
+            </div>
           </aside>
         </div>
 
-        {/* BOTTOM — compact quotation sheet (export target, fits its content) */}
-        <section
-          ref={quoteSheetRef}
-          className="quote-sheet mx-auto w-full max-w-[210mm] rounded-2xl border border-line bg-white text-ink overflow-hidden shadow-lg"
-        >
-          <div className="bg-[#011424] text-white px-5 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-8 w-auto" />
+        {/* ── Site photo & placement — optional but impressive for clients ── */}
+        <div className="no-export mx-auto w-full max-w-[240mm] mb-4 rounded-2xl border border-line bg-white p-5 shadow-sm text-ink">
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+            <div>
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-teal/15 text-teal text-xs font-bold">+</span>
+                Show the client where it goes
+              </h3>
+              <p className="text-xs text-gray-500 mt-1 max-w-xl">
+                Optional but powerful: snap a photo of their store / wall, pick how it mounts, and it appears on the quote you send. Helps close the deal.
+              </p>
+            </div>
+            {!sitePhoto && (
+              <span className="text-[10px] uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Optional</span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Photo of the place</label>
+              <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-3 py-8 cursor-pointer hover:border-teal hover:bg-teal/5 transition min-h-[120px]">
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => onSitePhotoFile(e.target.files?.[0] ?? null)} />
+                {sitePhoto ? (
+                  <img src={sitePhoto} alt="Site" className="max-h-32 max-w-full object-contain rounded" />
+                ) : (
+                  <span className="text-sm text-gray-400 text-center px-2">Tap to upload<br /><span className="text-xs">storefront, wall, or site photo</span></span>
+                )}
+              </label>
+              {sitePhoto && (
+                <button onClick={() => setSitePhoto("")} className="mt-1.5 text-xs text-red-500 hover:underline">Remove photo</button>
+              )}
+            </div>
+            <div className="space-y-3">
               <div>
-                <p className="font-display font-bold text-base leading-tight">Delight Works</p>
-                <p className="text-[10px] text-fog tracking-widest uppercase">{site.descriptor}</p>
+                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Where will it be installed?</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(["storefront", "wall", "bracket", "pole", "rooftop", "other"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlacementType(p)}
+                      className={`rounded-xl border px-2.5 py-2 text-[12px] font-medium text-left transition ${
+                        placementType === p
+                          ? "border-teal bg-teal/10 text-ink ring-1 ring-teal/30"
+                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                      }`}
+                    >
+                      {PLACEMENT_LABELS[p]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-1">Extra detail (optional)</label>
+                <input
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                  value={placementNote}
+                  onChange={(e) => setPlacementNote(e.target.value)}
+                  placeholder="e.g. above the main door, facing the street"
+                />
               </div>
             </div>
-            <div className="text-right">
-              <p className="font-display font-bold text-gold text-base leading-tight">{quoteNo}</p>
-              <p className="text-xs text-fog">{today()}</p>
+          </div>
+        </div>
+
+        {/* BOTTOM — client-ready proposal sheet (export target) */}
+        <section
+          ref={quoteSheetRef}
+          className="quote-sheet mx-auto w-full max-w-[240mm] rounded-2xl border border-gray-300 bg-white text-ink overflow-hidden shadow-lg font-sans"
+          style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
+        >
+          {/* Friendly header */}
+          <div className="bg-[#011424] text-white px-5 py-3.5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Image src="/logo-mark.png" alt="DW" width={100} height={48} className="h-9 w-auto" />
+              <div>
+                <p className="font-bold text-base leading-tight">Delight Works</p>
+                <p className="text-[10px] text-fog tracking-wide">{site.descriptor}</p>
+              </div>
+            </div>
+            <div className="text-center flex-1 hidden sm:block">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-fog">Sign proposal</p>
+              <p className="font-bold text-gold text-lg leading-tight">{quoteNo}</p>
+            </div>
+            <div className="text-right text-xs leading-snug">
+              <p className="font-semibold text-gold sm:hidden">{quoteNo}</p>
+              <p className="text-fog">{today()}</p>
             </div>
           </div>
 
-          <div className="px-5 py-3">
+          <div className="p-4 space-y-4">
             {lines.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8 no-export">
-                Add a sign from the builder above. Its 3 renders (front · side · 3D) with dimensions will appear here.
+              <p className="text-sm text-gray-400 text-center py-12 no-export">
+                Your quote is empty. Build a sign above, then hit <strong>Add to Quote</strong>. The proposal with 3D views will show here — ready to download and send.
               </p>
             ) : (
-              lines.map((l) => {
-                const size = l.shape === "circle" ? `Ø ${ft(l.diameter)} ft` : `${ft(l.width)} W × ${ft(l.height)} H ft`;
-                const cells: [string, string][] = [
-                  ["Size", size],
-                  ["Thickness", `${l.thicknessIn}"`],
-                  ["Area", `${l.areaSqft.toFixed(2)} sqft`],
-                  ["Qty", String(l.qty)],
-                  ["Face / Build", l.face],
-                  ["Lighting", l.lighting],
-                  ["Printing", l.printing || "—"],
-                  ["Mounting", MOUNTING_LABELS[l.mounting] ?? l.mounting],
-                ];
+              lines.map((l, idx) => {
+                const size = l.shape === "circle" ? `Ø ${ft(l.diameter)} ft` : `${ft(l.width)} × ${ft(l.height)} ft`;
                 return (
-                  <div key={l.id} className="mb-3 last:mb-0 border border-gray-300 rounded-lg overflow-hidden">
-                    <div className="flex items-center justify-between gap-3 bg-[#eef2f6] px-3 py-1.5 border-b border-gray-300">
-                      <p className="text-sm font-bold">{l.signName} <span className="font-normal text-gray-500">· {shapeLabel(l.shape)}</span></p>
-                      <p className="text-sm font-bold">₱{fmt(l.unitCost * l.qty)}</p>
+                  <div key={l.id} className="rounded-xl border border-gray-300 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 bg-[#f0f4f8] px-3 py-2 border-b border-gray-300">
+                      <p className="text-sm font-bold">
+                        {idx + 1}. {l.signName}
+                        <span className="font-normal text-gray-500 ml-1.5 text-xs">{shapeLabel(l.shape)} · {size}</span>
+                      </p>
+                      <p className="text-sm font-bold text-[#011424]">₱{fmt(l.unitCost * l.qty)}</p>
                     </div>
-                    <div className="grid grid-cols-3 bg-[#f0f3f6]">
-                      {([["Front", l.renders.front], ["Side · thickness", l.renders.side], ["3D view", l.renders.iso]] as const).map(([cap, src], i) => (
-                        <div key={cap} className={i < 2 ? "border-r border-gray-300" : ""}>
-                          <p className={angleTag}>{cap}</p>
-                          {src ? <img src={src} alt={cap} className="w-full h-40 object-contain" /> : <div className="h-40 flex items-center justify-center text-xs text-gray-400">—</div>}
+
+                    {/* Multi-view — clear labels for clients */}
+                    <div className="grid grid-cols-12 gap-0 bg-white">
+                      <div className="col-span-5 sm:col-span-5 border-r border-gray-200 p-2 bg-[#fafbfc]">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">3D preview</p>
+                        {l.renders.iso ? (
+                          <img src={l.renders.iso} alt="3D" className="w-full h-40 object-contain bg-white rounded-lg border border-gray-100" />
+                        ) : (
+                          <div className="h-40 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
+                        )}
+                      </div>
+                      <div className="col-span-7 flex flex-col">
+                        <div className="flex gap-2 p-2 border-b border-gray-200">
+                          <div className="flex-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Front</p>
+                            {l.renders.front ? (
+                              <img src={l.renders.front} alt="Front" className="w-full h-24 object-contain bg-white rounded border border-gray-100" />
+                            ) : (
+                              <div className="h-24 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded bg-white">—</div>
+                            )}
+                          </div>
+                          <div className="w-[36%]">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Side</p>
+                            {l.renders.side ? (
+                              <img src={l.renders.side} alt="Side" className="w-full h-24 object-contain bg-white rounded border border-gray-100" />
+                            ) : (
+                              <div className="h-24 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded bg-white">—</div>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-4 border-t border-gray-300 text-[11px]">
-                      {cells.map(([k, v], i) => (
-                        <div key={k} className={`px-2 py-1.5 ${i % 4 !== 3 ? "border-r" : ""} ${i < 4 ? "border-b" : ""} border-gray-200`}>
-                          <span className="block text-[9px] uppercase tracking-wider text-gray-500">{k}</span>
-                          <strong className="text-black leading-tight">{v}</strong>
+                        <div className="p-2.5 text-[11px] leading-snug grow">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5">
+                            <div><span className="text-gray-500 text-[9px] uppercase">Size</span><br /><strong>{size}</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Depth</span><br /><strong>{l.thicknessIn}&quot;</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Area</span><br /><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Qty</span><br /><strong>{l.qty}</strong></div>
+                            <div className="col-span-2"><span className="text-gray-500 text-[9px] uppercase">Material</span><br /><strong>{l.face}</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Lighting</span><br /><strong>{l.lighting}</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Print</span><br /><strong>{l.printing || "—"}</strong></div>
+                            <div className="col-span-2 sm:col-span-4"><span className="text-gray-500 text-[9px] uppercase">Mounting</span><br /><strong>{l.mounting}</strong></div>
+                          </div>
+                          {l.note && <p className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1"><strong>Note:</strong> {l.note}</p>}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                    {l.note && <p className="text-[11px] text-gray-600 px-3 py-1.5 border-t border-gray-200">Note: {l.note}</p>}
-                    <div className="no-export px-3 pb-1.5">
+
+                    <div className="no-export px-3 py-1.5 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
                       <button onClick={() => removeLine(l.id)} className="text-red-500 text-xs hover:underline">Remove</button>
+                      <span className="text-[10px] text-gray-400">Item {idx + 1} of {lines.length}</span>
                     </div>
                   </div>
                 );
               })
             )}
-          </div>
 
-          <div className="px-5 py-2 border-t border-gray-200 text-sm ml-auto max-w-xs space-y-0.5">
-            <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span className="font-semibold">₱{fmt(subtotal)}</span></div>
-            <div className="flex justify-between items-center no-export">
-              <span className="text-gray-500">Discount</span>
-              <input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-28 border border-gray-200 rounded px-2 py-0.5 text-right text-sm" />
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between"><span className="text-gray-500">Discount</span><span>−₱{fmt(discount)}</span></div>
+            {/* Site photo on sheet — plain language */}
+            {(sitePhoto || placementNote) && (
+              <div className="rounded-xl border border-gray-300 overflow-hidden">
+                <div className="bg-[#f0f4f8] px-3 py-2 border-b border-gray-300">
+                  <p className="text-sm font-bold">Where it will be installed</p>
+                </div>
+                <div className="grid grid-cols-12 gap-0">
+                  <div className="col-span-5 p-2 bg-[#fafbfc] border-r border-gray-200">
+                    {sitePhoto ? (
+                      <img src={sitePhoto} alt="Site" className="w-full h-36 object-cover rounded-lg border border-gray-100" />
+                    ) : (
+                      <div className="h-36 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">No photo</div>
+                    )}
+                  </div>
+                  <div className="col-span-7 p-3 text-[12px] space-y-2">
+                    <p>
+                      <span className="text-gray-500 text-[9px] uppercase tracking-wider">Installation</span><br />
+                      <strong className="text-base">{PLACEMENT_LABELS[placementType]}</strong>
+                    </p>
+                    {placementNote && (
+                      <p>
+                        <span className="text-gray-500 text-[9px] uppercase tracking-wider">Details</span><br />
+                        <strong>{placementNote}</strong>
+                      </p>
+                    )}
+                    <p className="text-[10px] text-gray-500 border-t border-gray-100 pt-1.5">
+                      Final position confirmed on site before install.
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
-            <div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div>
-            <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-200">
-              <span>Grand Total</span>
-              <span>₱{fmt(grand)}</span>
+
+            {/* Simple terms */}
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px] text-gray-600 leading-relaxed">
+              <p className="font-bold text-[11px] text-gray-700 mb-1">Good to know</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Sizes shown in feet. Final measure on site before production.</li>
+                <li>Price includes the options listed above. Install / permit fees quoted separately if needed.</li>
+                <li>This is a proposal — not a final invoice until confirmed.</li>
+              </ul>
+              {qs.terms?.length > 0 && (
+                <div className="mt-1.5 pt-1.5 border-t border-gray-200">
+                  {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="px-5 py-2.5 bg-gray-50 text-[10px] text-gray-600 space-y-0.5">
-            {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
-            <div className="pt-2 flex justify-between items-end">
-              <div className="no-export">
-                <label className="block text-[10px] font-semibold tracking-wider uppercase text-gray-500 mb-0.5">Prepared by</label>
-                <input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="border border-gray-200 rounded px-2 py-1 text-sm w-40" placeholder="Your name" />
+          {/* Totals + prepared by */}
+          <div className="border-t border-gray-200 grid grid-cols-1 sm:grid-cols-3 text-[11px]">
+            <div className="p-3 border-b sm:border-b-0 sm:border-r border-gray-200">
+              <p className="text-gray-500 uppercase tracking-wider text-[9px]">Prepared by</p>
+              <p className="font-semibold text-sm mt-0.5">{preparedBy || "—"}</p>
+              <p className="text-gray-500">{qs.preparedByTitle}</p>
+              <div className="no-export mt-1.5">
+                <input value={preparedBy} onChange={(e) => setPreparedBy(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-full" placeholder="Your name" />
               </div>
-              <div className="text-right">
-                <p className="font-semibold text-ink text-xs">{preparedBy || "—"}</p>
-                <p>{qs.preparedByTitle}</p>
+            </div>
+            <div className="p-3 border-b sm:border-b-0 sm:border-r border-gray-200">
+              <p className="text-gray-500 uppercase tracking-wider text-[9px]">Price summary</p>
+              <div className="mt-1 space-y-0.5 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span className="font-medium">₱{fmt(subtotal)}</span></div>
+                {discount > 0 && <div className="flex justify-between"><span className="text-gray-500">Discount</span><span>−₱{fmt(discount)}</span></div>}
+                <div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div>
+                <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1 mt-1">
+                  <span>Total</span><span className="text-[#011424]">₱{fmt(grand)}</span>
+                </div>
               </div>
+              <div className="no-export mt-1.5 flex items-center gap-1.5">
+                <span className="text-gray-500 text-[10px]">Discount ₱</span>
+                <input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-right text-xs" />
+              </div>
+            </div>
+            <div className="p-3">
+              <p className="text-gray-500 uppercase tracking-wider text-[9px]">Next step</p>
+              <p className="mt-1 text-sm font-semibold">Reply to confirm or request changes.</p>
+              <p className="text-gray-500 text-[10px] mt-1">Quote no. {quoteNo}</p>
             </div>
           </div>
 
-          <div className="no-export px-5 py-3 flex flex-wrap justify-end gap-2 border-t border-gray-100">
-            <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gray-300 px-5 py-2.5 text-sm font-bold text-ink hover:bg-gray-50 disabled:opacity-50">
-              Download JPG
-            </button>
-            <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-5 py-2.5 text-sm font-bold hover:bg-gold-dim disabled:opacity-50">
-              {exporting ? "Exporting…" : "Download PNG"}
-            </button>
-            <button disabled={saving} onClick={saveQuote} className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50">
-              {saving ? "Saving…" : "Save to Supabase"}
-            </button>
+          <div className="no-export px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 bg-gray-50">
+            <p className="text-xs text-gray-500">Download and send via chat / email — no print needed.</p>
+            <div className="flex flex-wrap gap-2">
+              <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("jpeg")} className="rounded-full border border-gray-300 px-5 py-2.5 text-sm font-bold text-ink hover:bg-white disabled:opacity-50">
+                Download JPG
+              </button>
+              <button disabled={exporting || lines.length === 0} onClick={() => downloadImage("png")} className="rounded-full bg-gold text-ink px-5 py-2.5 text-sm font-bold hover:bg-gold-dim disabled:opacity-50">
+                {exporting ? "Exporting…" : "Download PNG"}
+              </button>
+              <button disabled={saving} onClick={saveQuote} className="rounded-full bg-teal text-ink px-5 py-2.5 text-sm font-bold disabled:opacity-50">
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
         </section>
       </main>
