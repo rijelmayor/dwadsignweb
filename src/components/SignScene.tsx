@@ -57,6 +57,8 @@ interface SignSceneProps {
   /** Units used for the dimension labels (what the sales person typed) */
   unit?: LenUnit;
   depthUnit?: LenUnit;
+  /** Hide white studio background (checkerboard / transparent) — useful for clear acrylic */
+  clearBackground?: boolean;
 }
 
 
@@ -479,7 +481,13 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
         </RoundedBox>
       ) : (
         <RoundedBox args={[w, h, depth]} radius={0.008} castShadow receiveShadow>
-          <meshStandardMaterial color={returnCol} roughness={look.roughness} metalness={look.metalness} />
+          <meshStandardMaterial
+            color={returnCol}
+            roughness={look.roughness}
+            metalness={look.metalness}
+            transparent={variant === "acrylic" || service === "acrylic"}
+            opacity={variant === "acrylic" || service === "acrylic" ? 0.72 : 1}
+          />
         </RoundedBox>
       )}
       {/* Front face panel when depth/returns color differs from body */}
@@ -771,9 +779,24 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
   const withLight = props.lit ?? props.traits.light !== "none";
   const dimLabel = shape === "circle" ? `Ø ${fmtLen(widthFt, props.unit)}` : null;
   const chip = "rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm";
+  const clearBg = !!props.clearBackground;
 
   return (
-    <div className="w-full h-full min-h-[400px] rounded-xl overflow-hidden bg-white border border-line relative">
+    <div
+      className={`w-full h-full min-h-[400px] rounded-xl overflow-hidden border border-line relative ${
+        clearBg ? "bg-[#d4d4d8]" : "bg-white"
+      }`}
+      style={
+        clearBg
+          ? {
+              backgroundImage:
+                "linear-gradient(45deg,#c4c4c8 25%,transparent 25%),linear-gradient(-45deg,#c4c4c8 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#c4c4c8 75%),linear-gradient(-45deg,transparent 75%,#c4c4c8 75%)",
+              backgroundSize: "20px 20px",
+              backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
+            }
+          : undefined
+      }
+    >
       <Canvas
         camera={{ position: [camDist * 0.28, camDist * 0.1, camDist], fov: 30 }}
         gl={{
@@ -785,7 +808,7 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
         }}
         dpr={[1.5, 2.5]}
       >
-        <color attach="background" args={["#ffffff"]} />
+        {!clearBg && <color attach="background" args={["#ffffff"]} />}
         <ambientLight intensity={1.25} />
         <directionalLight position={[5, 7, 6]} intensity={0.65} />
         <directionalLight position={[-4, 3, -2]} intensity={0.25} />

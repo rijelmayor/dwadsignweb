@@ -84,6 +84,9 @@ export function presetFor(service: string, o2: { lit: boolean; lbBuild: string; 
   if (service === "lightbox") return PRESETS.find((p) => p.id === `lb-${o2.lbBuild}`);
   if (service === "panaflex") return PRESETS.find((p) => p.id === (o2.lit ? "pf-lit" : "pf-nonlit"));
   const list = presetsFor(service);
+  // Acrylic: do not auto-select the first (bolt) preset — user picks Build in Options so
+  // Live 3D starts as plain acrylic with no advertising bolts until they choose one.
+  if (service === "acrylic" && !o2.presetId) return undefined;
   return list.find((p) => p.id === o2.presetId) ?? list[0];
 }
 

@@ -292,6 +292,8 @@ export default function QuoteBuilder() {
   const [siteMockup, setSiteMockup] = useState<string>(""); // clear iso for overlay
   /** Wizard step 1–6 so Live 3D stays fully visible */
   const [buildStep, setBuildStep] = useState(1);
+  /** Optional: hide 3D studio background (useful for clear acrylic / logo cut-outs) */
+  const [clearBg, setClearBg] = useState(false);
   /** Draft strings so size fields can be cleared and typed freely */
   const [dimUnit, setDimUnit] = useState<LenUnit>("ft");
   const [depthUnit, setDepthUnit] = useState<LenUnit>("in");
@@ -334,7 +336,7 @@ export default function QuoteBuilder() {
   const faceLabel = isLightbox ? `Lightbox · ${lbBuildLabel}` : serviceName;
   const lightingLabel = labelOf(LIGHTING_OPTIONS, lighting);
   const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
-  const variant = isLightbox ? lbBuild : "panaflex";
+  const variant = isLightbox ? lbBuild : serviceId === "acrylic" ? "acrylic" : "panaflex";
 
   // Arms / brackets: user chooses 1 or 2 for supported mounts; default single for small circles
   const needsArms = mounting === "bracket" || mounting === "hanging" || mounting === "pole" || mounting === "pole_single";
@@ -929,11 +931,13 @@ export default function QuoteBuilder() {
           </div>
         )}
 
-        {/* TOP: Builder (left, one step at a time) + live 3D (right, always full) */}
-        <div className="grid lg:grid-cols-[minmax(320px,0.85fr)_minmax(480px,1.15fr)] gap-6 items-start">
+        {/* TOP: Builder (left) + live 3D (right). Desktop: 3D stays put; left header fixed, options scroll.
+            Mobile: 3D on top, all options scroll below. */}
+        <div className="grid lg:grid-cols-[minmax(320px,0.85fr)_minmax(480px,1.15fr)] gap-6 items-start lg:items-stretch lg:h-[calc(100vh-5.5rem)] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-hidden">
           {/* LEFT — wizard controls */}
-          <section className="space-y-3">
-            <div className="rounded-2xl border border-line bg-panel p-4">
+          <section className="order-2 lg:order-1 flex flex-col gap-3 min-h-0 lg:h-full lg:overflow-hidden">
+            {/* Fixed header + step pills (does not scroll on desktop) */}
+            <div className="rounded-2xl border border-line bg-panel p-4 shrink-0">
               <h1 className="font-display text-xl font-bold">Build a quote</h1>
               <p className="text-xs text-fog mt-1">One step at a time — 3D stays on the right.</p>
               {/* Compact step pills */}
@@ -964,6 +968,8 @@ export default function QuoteBuilder() {
               </div>
             </div>
 
+            {/* Scrollable step content (desktop: only this block scrolls) */}
+            <div className="space-y-3 min-h-0 lg:overflow-y-auto lg:flex-1 lg:pr-1 pb-2">
             {/* 1 · Shape */}
             {buildStep === 1 && (
             <div className={cardCls}>
@@ -1401,21 +1407,36 @@ export default function QuoteBuilder() {
             )}
 
             {msg && <div className="rounded-xl border border-teal/40 bg-teal/10 px-4 py-3 text-sm text-teal">{msg}</div>}
+            </div>
           </section>
 
-          {/* RIGHT — live 3D (sticky while building) */}
-          <aside className="lg:sticky lg:top-20 space-y-3">
+          {/* RIGHT — live 3D (desktop: stays in place / scrolls only within right column) */}
+          <aside className="order-1 lg:order-2 space-y-3 min-h-0 lg:h-full lg:overflow-y-auto lg:sticky lg:top-20">
             <div className="rounded-2xl border border-line bg-panel overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-line flex items-center justify-between gap-2">
+              <div className="px-4 py-2.5 border-b border-line flex items-center justify-between gap-2 flex-wrap">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Live 3D</p>
                   <p className="text-sm font-semibold">Updates as you build</p>
                 </div>
-                <span className="text-xs text-fog">
-                  {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(height, dimUnit)} H × ${fmtLen(width, dimUnit)} W`} · {fmtLen(thicknessIn / 12, depthUnit)} T
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-fog">
+                    {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(height, dimUnit)} H × ${fmtLen(width, dimUnit)} W`} · {fmtLen(thicknessIn / 12, depthUnit)} T
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setClearBg((v) => !v)}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border transition ${
+                      clearBg
+                        ? "border-teal bg-teal/20 text-teal"
+                        : "border-line text-fog hover:border-gold hover:text-white"
+                    }`}
+                    title="Hide studio background — better for clear acrylic / logo cut-outs"
+                  >
+                    {clearBg ? "BG off" : "Remove BG"}
+                  </button>
+                </div>
               </div>
-              <div className="h-[min(62vh,560px)] min-h-[420px]">
+              <div className="h-[min(52vh,520px)] min-h-[360px] lg:h-[min(58vh,520px)]">
                 <SignScene
                   ref={sceneRef}
                   widthFt={dimW}
@@ -1431,6 +1452,7 @@ export default function QuoteBuilder() {
                   bolts={boltSpec}
                   unit={dimUnit}
                   depthUnit={depthUnit}
+                  clearBackground={clearBg}
                   text="Your Logo"
                   logoUrl={activeLogo}
                   showDimensions
