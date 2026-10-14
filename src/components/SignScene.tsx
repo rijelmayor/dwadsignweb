@@ -159,8 +159,9 @@ function LogoFace({
     texture.premultiplyAlpha = false;
     texture.needsUpdate = true;
   }, [texture]);
-  const sw = Math.max(0.05, Math.min(1.2, (scaleW ?? 100) / 100));
-  const sh = Math.max(0.05, Math.min(1.2, (scaleH ?? 100) / 100));
+  // 100% = full face of the panel (edge to edge); allow slight overshoot for bleed
+  const sw = Math.max(0.05, Math.min(1.05, (scaleW ?? 100) / 100));
+  const sh = Math.max(0.05, Math.min(1.05, (scaleH ?? 100) / 100));
   const lw = w * sw;
   const lh = h * sh;
   return (
@@ -718,18 +719,32 @@ function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, show
 
   const points: [number, number][] = [];
   if (circle) {
-    const n = bolts.count, off = n === 4 ? Math.PI / 4 : Math.PI / 6, rr = w / 2 - inset;
-    for (let i = 0; i < n; i++) points.push([Math.cos(off + (i * 2 * Math.PI) / n) * rr, Math.sin(off + (i * 2 * Math.PI) / n) * rr]);
+    const rr = w / 2 - inset;
+    if (bolts.count === 2) {
+      // Left + right — common for small round acrylic plaques
+      points.push([-rr, 0], [rr, 0]);
+    } else {
+      const n = bolts.count;
+      const off = n === 4 ? Math.PI / 4 : Math.PI / 6;
+      for (let i = 0; i < n; i++) points.push([Math.cos(off + (i * 2 * Math.PI) / n) * rr, Math.sin(off + (i * 2 * Math.PI) / n) * rr]);
+    }
   } else {
     const x = w / 2 - inset, y = h / 2 - inset;
-    points.push([-x, y], [x, y], [-x, -y], [x, -y]);
-    if (bolts.count === 6) points.push([0, y], [0, -y]);
+    if (bolts.count === 2) {
+      // Mid left + mid right
+      points.push([-x, 0], [x, 0]);
+    } else {
+      points.push([-x, y], [x, y], [-x, -y], [x, -y]);
+      if (bolts.count === 6) points.push([0, y], [0, -y]);
+    }
   }
 
   const panelGeo = useMemo(() => (circle ? new THREE.CylinderGeometry(w / 2, w / 2, pt, 64) : new THREE.BoxGeometry(w, h, pt)), [circle, w, h, pt]);
   const edgeGeo = useMemo(() => new THREE.EdgesGeometry(panelGeo, 25), [panelGeo]);
   const wallW = Math.max(w, 2) * 4, wallH = Math.max(h, 2) * 4;
-  const art = Math.max(0.2, Math.min(w, h) - inset * 3);
+  // Logo base = full panel face so 100% scale = edge-to-edge (corner to corner)
+  const artW = circle ? w : w;
+  const artH = circle ? w : h;
 
   return (
     <group>
@@ -747,9 +762,9 @@ function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, show
         <lineBasicMaterial color={tint.edge} />
       </lineSegments>
 
-      {/* printed artwork (sticker / UV) */}
-      <Artwork w={circle ? art : w - inset * 3} h={circle ? art : h - inset * 3} depth={pt} logoUrl={logoUrl} circle={circle}
-        fontSize={Math.min(w * 0.14, h * 0.28)} maxWidth={Math.max(0.3, w - inset * 3.2)} color={tint.ink} outline={tint.outline}
+      {/* printed artwork (sticker / UV) — 100% = full panel edge to edge */}
+      <Artwork w={artW} h={artH} depth={pt} logoUrl={logoUrl} circle={circle}
+        fontSize={Math.min(w * 0.14, h * 0.28)} maxWidth={Math.max(0.3, w * 0.95)} color={tint.ink} outline={tint.outline}
         logoScaleW={logoScaleW} logoScaleH={logoScaleH} />
 
       {/* advertising bolts: barrel behind the panel + round cap on the face */}

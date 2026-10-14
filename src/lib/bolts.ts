@@ -5,7 +5,8 @@ export type PanelTint = "clear" | "frosted" | "white" | "black";
 export interface BoltSpec {
   panelMm: number;
   standoffMm: number;
-  count: 4 | 6;
+  /** 2 = round/small plaques; 4 = corners; 6 = corners + mid sides */
+  count: 2 | 4 | 6;
   finish: BoltFinish;
   tint: PanelTint;
   /** bolt cap diameter */

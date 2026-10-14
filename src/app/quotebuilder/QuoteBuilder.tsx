@@ -304,7 +304,7 @@ export default function QuoteBuilder() {
   const [letterUnit, setLetterUnit] = useState<LenUnit>("in");
   /** Acrylic panel on advertising bolts */
   const [boltFinish, setBoltFinish] = useState<BoltFinish>("chrome");
-  const [boltCount, setBoltCount] = useState<4 | 6>(4);
+  const [boltCount, setBoltCount] = useState<2 | 4 | 6>(4);
   const [panelTint, setPanelTint] = useState<PanelTint>("clear");
   const [standoffMm, setStandoffMm] = useState(25);
   const sceneRef = useRef<SignSceneHandle>(null);
@@ -1312,11 +1312,12 @@ export default function QuoteBuilder() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Bolts</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {([4, 6] as const).map((n) => (
+                      <div className="grid grid-cols-3 gap-2">
+                        {([2, 4, 6] as const).map((n) => (
                           <button key={n} type="button" onClick={() => setBoltCount(n)} className={`rounded-xl border px-2 py-2 text-sm font-semibold ${boltCount === n ? "border-gold bg-gold text-ink" : "border-line text-fog hover:border-gold"}`}>{n} pcs</button>
                         ))}
                       </div>
+                      <p className="text-[10px] text-fog mt-1">2 pcs for small / round acrylic</p>
                     </div>
                     <div>
                       <label className={labelCls}>Standoff (gap to wall)</label>
@@ -1537,20 +1538,20 @@ export default function QuoteBuilder() {
                   )}
                   <div className="rounded-xl border border-line bg-ink/30 p-3 space-y-2">
                     <p className="text-[11px] font-semibold text-fog uppercase tracking-wider">Logo size on panel</p>
-                    <p className="text-[11px] text-fog">Stretch W and H separately if the logo ratio doesn’t match the acrylic box. 100% = edge to edge.</p>
+                    <p className="text-[11px] text-fog">Stretch W and H separately. <strong className="text-white">100% = full panel end to end</strong> (max size of the sign).</p>
                     <label className="flex items-center gap-2 text-xs text-fog">
                       <span className="w-16 shrink-0">Width</span>
-                      <input type="range" min={20} max={110} value={logoScaleW} onChange={(e) => setLogoScaleW(+e.target.value)} className="flex-1" />
+                      <input type="range" min={15} max={100} value={logoScaleW} onChange={(e) => setLogoScaleW(+e.target.value)} className="flex-1" />
                       <span className="w-10 text-right font-semibold text-white">{logoScaleW}%</span>
                     </label>
                     <label className="flex items-center gap-2 text-xs text-fog">
                       <span className="w-16 shrink-0">Height</span>
-                      <input type="range" min={20} max={110} value={logoScaleH} onChange={(e) => setLogoScaleH(+e.target.value)} className="flex-1" />
+                      <input type="range" min={15} max={100} value={logoScaleH} onChange={(e) => setLogoScaleH(+e.target.value)} className="flex-1" />
                       <span className="w-10 text-right font-semibold text-white">{logoScaleH}%</span>
                     </label>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <button type="button" onClick={() => { setLogoScaleW(100); setLogoScaleH(100); }} className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold text-fog hover:border-gold hover:text-white">
-                        Fill panel (100%)
+                      <button type="button" onClick={() => { setLogoScaleW(100); setLogoScaleH(100); }} className="rounded-full border border-gold/50 bg-gold/10 px-2.5 py-1 text-[10px] font-semibold text-gold hover:bg-gold/20">
+                        Fill end to end
                       </button>
                       <button type="button" onClick={() => { setLogoScaleW(90); setLogoScaleH(90); }} className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold text-fog hover:border-gold hover:text-white">
                         Reset 90%
