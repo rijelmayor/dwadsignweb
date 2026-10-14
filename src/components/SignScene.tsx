@@ -146,12 +146,21 @@ function LogoFace({ w, h, depth, logoUrl, circle = false }: { w: number; h: numb
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.generateMipmaps = true;
+    // Ensure alpha channel is used (cleared white BG → transparent, not black)
+    texture.premultiplyAlpha = false;
     texture.needsUpdate = true;
   }, [texture]);
   return (
     <mesh position={[0, 0, depth / 2 + 0.008]}>
       {circle ? <circleGeometry args={[w / 2, 64]} /> : <planeGeometry args={[w, h]} />}
-      <meshBasicMaterial map={texture} toneMapped={false} />
+      <meshBasicMaterial
+        map={texture}
+        toneMapped={false}
+        transparent
+        depthWrite={false}
+        alphaTest={0.02}
+        side={THREE.DoubleSide}
+      />
     </mesh>
   );
 }

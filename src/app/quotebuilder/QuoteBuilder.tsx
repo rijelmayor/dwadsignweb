@@ -465,22 +465,29 @@ export default function QuoteBuilder() {
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth || img.width;
       canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext("2d");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) return;
+      // Start fully transparent so cleared pixels stay alpha=0 (not black)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const d = imageData.data;
-      // Threshold: pixels that are nearly white become transparent (soft edge)
-      const whiteCutoff = 245;
-      const soft = 15;
+      // Near-white / light gray → transparent (soft falloff so edges look clean)
+      const fullClear = 230; // fully transparent at this brightness and above
+      const softStart = 200; // begin fading alpha
       for (let i = 0; i < d.length; i += 4) {
         const r = d[i], g = d[i + 1], b = d[i + 2];
         const min = Math.min(r, g, b);
         const max = Math.max(r, g, b);
-        // Near-white and low saturation
-        if (min >= whiteCutoff - soft && max - min < 30) {
-          const t = Math.max(0, Math.min(1, (min - (whiteCutoff - soft)) / soft));
-          d[i + 3] = Math.round(d[i + 3] * (1 - t));
+        const sat = max - min;
+        // Light, low-saturation pixels (white / off-white / light gray BG)
+        if (min >= softStart && sat < 40) {
+          if (min >= fullClear) {
+            d[i + 3] = 0; // fully transparent — not black
+          } else {
+            const t = (min - softStart) / (fullClear - softStart);
+            d[i + 3] = Math.round(d[i + 3] * (1 - t));
+          }
         }
       }
       ctx.putImageData(imageData, 0, 0);
