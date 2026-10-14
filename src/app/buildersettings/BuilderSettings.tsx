@@ -180,7 +180,7 @@ export default function BuilderSettings() {
   async function save(key: string, value: unknown) {
     setSaving(true); setStatus("");
     const sb = createClient();
-    if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); return; }
+    if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) in the environment variables"); setSaving(false); return; }
     const { error } = await sb.from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
     setStatus(error ? `Error: ${error.message}` : `Saved "${key}" ✓`);
     setSaving(false); setTimeout(() => setStatus(""), 3000);
@@ -201,7 +201,7 @@ export default function BuilderSettings() {
         next = { ...next, branding: { ...next.branding, teamImage: team.png } };
       }
       const sb = createClient();
-      if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and ANON_KEY in .env.local"); setSaving(false); setUploadProgress(""); return; }
+      if (!sb) { setStatus("Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) in the environment variables"); setSaving(false); setUploadProgress(""); return; }
 
       // Project media (images + videos): compress images client-side, upload videos as-is.
       const fileEntries = Object.entries(projectFiles);

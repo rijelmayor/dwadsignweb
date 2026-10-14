@@ -138,7 +138,7 @@ export function mergeLanding(raw: unknown): LandingSettings {
 
 export async function fetchLandingSettings(): Promise<LandingSettings> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || url.includes("YOUR-PROJECT")) return DEFAULT_LANDING;
   try {
     const res = await fetch(`${url}/rest/v1/site_settings?key=eq.landing&select=value`, {
