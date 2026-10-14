@@ -226,7 +226,9 @@ function lookOf(service?: string): Look {
 
 type V3 = [number, number, number];
 const STEEL = "#7b848d";
-const WALL = "#e4e9ee";
+/** Studio wall / backdrop — very light so clear acrylic & logos stay readable in Live 3D + exports */
+const WALL = "#f5f6f8";
+const WALL_SOFT = "#f8f9fb";
 
 /** Cylindrical steel bar between two points. */
 function Strut({ a, b, r = 0.04, color = STEEL }: { a: V3; b: V3; r?: number; color?: string }) {
@@ -299,11 +301,11 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
   const top = h / 2;
 
   if (mount === "wall") {
-    // Flush against the wall — light wall so it doesn’t gray out the scene
+    // Flush against the wall — very light so the sign stays readable
     return (
       <mesh position={[0, 0, back - 0.004 - 0.12]}>
         <boxGeometry args={[bigW, bigH, 0.24]} />
-        <meshStandardMaterial color="#e8eaed" roughness={0.92} />
+        <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
       </mesh>
     );
   }
@@ -318,7 +320,7 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
       <group>
         <mesh position={[wallX - 0.12, 0, 0]}>
           <boxGeometry args={[0.24, bigH, bigW * 0.5]} />
-          <meshStandardMaterial color="#e8eaed" roughness={0.92} />
+          <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
         </mesh>
         {armYs.map((armY) => (
           <group key={armY}>
@@ -340,7 +342,7 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
       <group>
         <mesh position={[0, cableTop + 0.08, 0]}>
           <boxGeometry args={[Math.max(w * 1.4, 2), 0.12, Math.max(depth * 3, 1.2)]} />
-          <meshStandardMaterial color="#e8eaed" roughness={0.9} />
+          <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
         </mesh>
         {xs.map((x) => (
           <group key={x}>
@@ -748,10 +750,10 @@ function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, show
 
   return (
     <group>
-      {/* wall */}
+      {/* wall — light backdrop so clear acrylic / logo stay visible in Live 3D & quote exports */}
       <mesh position={[0, 0, -pt / 2 - so - 0.12]}>
         <boxGeometry args={[wallW, wallH, 0.24]} />
-        <meshStandardMaterial color="#e8eaed" roughness={0.92} />
+        <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
       </mesh>
 
       {/* acrylic panel */}
@@ -849,10 +851,11 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
         }}
         dpr={[1.5, 2.5]}
       >
-        {!clearBg && <color attach="background" args={["#ffffff"]} />}
-        <ambientLight intensity={1.25} />
-        <directionalLight position={[5, 7, 6]} intensity={0.65} />
-        <directionalLight position={[-4, 3, -2]} intensity={0.25} />
+        {!clearBg && <color attach="background" args={["#fafbfc"]} />}
+        <ambientLight intensity={1.45} />
+        <directionalLight position={[5, 7, 6]} intensity={0.75} />
+        <directionalLight position={[-4, 3, -2]} intensity={0.35} />
+        <directionalLight position={[0, 4, 8]} intensity={0.3} />
         <Suspense fallback={null}>
           {props.letters ? (
             <LettersMesh spec={props.letters} widthFt={widthFt} heightFt={heightFt}>
