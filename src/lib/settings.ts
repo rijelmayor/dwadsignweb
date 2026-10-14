@@ -179,16 +179,30 @@ export interface QuoteSettings {
   presetSettings: PresetSettings;
 }
 const zeroRate = (): LightRate => ({ without: 0, with: 0 });
+/** Default ₱/sqft (without light / with light) — same table as Builder Settings → Material rates. */
 export const DEFAULT_PRICING: PricingSettings = {
   constructionPerSqft: 0,
-  materials: Object.fromEntries(MATERIAL_RATES.map(([id]) => [id, zeroRate()])),
-  lightbox: Object.fromEntries(LIGHTBOX_RATES.map(([id]) => [id, zeroRate()])),
+  materials: {
+    panaflex: { without: 650, with: 750 },
+    acrylic: { without: 2000, with: 850 },
+    neon: { without: 860, with: 950 },
+    apc: { without: 0, with: 0 },
+    tarp: { without: 650, with: 750 },
+    sticker: { without: 0, with: 0 },
+    metal: { without: 0, with: 0 },
+    custom: { without: 0, with: 0 },
+  },
+  lightbox: {
+    builtup: { without: 1900, with: 2000 },
+    acrylic: { without: 1900, with: 2000 },
+  },
   printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, 0])),
   minimumCharge: 0,
   lightboxMinimumCharge: 0,
 };
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
-  markupPct: 40, vatPct: 12, quotePrefix: "DW",
+  // Material rates are sell ₱/sqft as-is; set markup > 0 only if you want an extra % on top
+  markupPct: 0, vatPct: 12, quotePrefix: "DW",
   terms: ["This quotation is valid for 30 days from the date of issue.", "50% downpayment is required to commence production.", "Prices are subject to site survey confirmation."],
   preparedByTitle: "Sales Specialist", pricing: DEFAULT_PRICING, presetSettings: DEFAULT_PRESET_SETTINGS,
 };

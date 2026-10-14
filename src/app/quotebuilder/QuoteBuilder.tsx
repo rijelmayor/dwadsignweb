@@ -1,5 +1,5 @@
 "use client";
-import { presetFor, presetsFor, priceSign } from "@/lib/presets";
+import { presetFor, presetsFor } from "@/lib/presets";
 import { LETTER_FONTS, layoutText, useLetterFont } from "@/lib/letters";
 import type { LettersSpec } from "@/components/LettersMesh";
 import UnitField from "@/components/UnitField";
@@ -394,36 +394,64 @@ export default function QuoteBuilder() {
   const mountingShown = isBoltPanel
     ? `Wall · ${boltCount} advertising bolts (${BOLT_FINISHES.find((f) => f.id === boltFinish)?.label.toLowerCase()}, ${standoffMm} mm standoff)`
     : mountingText;
+  /**
+   * Live unit price = Material rates (₱/sqft) × area × sides, from Builder Settings.
+   * Only “without light” / “with light” rates matter for the base. Optional printing & construction
+   * add on if set. Markup % and minimum charge from quote settings still apply.
+   * Preset builds (Options) stay for description / 3D only — they no longer override these rates.
+   */
   const live = useMemo(() => {
-    if (activePreset) {
-      const pp = priceSign(activePreset, qs.presetSettings, areaSqft, sides === "double", { colors: neonColors, psu, leftoverLost });
-      return { rates: { construction: 0, face: 0, lighting: 0, printing: 0 }, raw: pp.fab + pp.material, unitCost: pp.unit, hasTbd: pp.tbd, breakdown: { construction: pp.fab, face: pp.material, lighting: 0, printing: 0, markup: pp.markup } as LineItem["breakdown"] | undefined };
-    }
     const markup = 1 + qs.markupPct / 100;
     const pr = qs.pricing;
     const key = lit ? "with" : "without";
     const printRate = def.printing ? (pr.printing[printing] ?? 0) * sidesMult : 0;
 
     if (isLightbox) {
-      // Lightbox: one rate per sqft for the chosen build, with / without light
       const rate = (pr.lightbox[lbBuild]?.[key] ?? 0) * sidesMult;
       const rates = { construction: rate, face: 0, lighting: 0, printing: printRate };
       const raw = (rate + printRate) * areaSqft;
-      return { rates, raw, unitCost: Math.max(pr.lightboxMinimumCharge || 0, raw * markup), hasTbd: rate <= 0 };
+      const afterMarkup = raw * markup;
+      return {
+        rates,
+        raw,
+        unitCost: Math.max(pr.lightboxMinimumCharge || 0, afterMarkup),
+        hasTbd: rate <= 0,
+        breakdown: {
+          construction: rate * areaSqft,
+          face: 0,
+          lighting: 0,
+          printing: printRate * areaSqft,
+          markup: Math.max(pr.lightboxMinimumCharge || 0, afterMarkup) - raw,
+        } as LineItem["breakdown"],
+      };
     }
 
-    // Other materials: material rate per sqft for the chosen light option (+ hidden construction, + printing)
-    // Sticker and Neon LED have no internal frame.
+    // Material rate per sqft for chosen light option (Panaflex, Acrylic, Neon, …)
     const framed = serviceId !== "sticker" && serviceId !== "neon";
+    const faceRate = (pr.materials[serviceId]?.[key] ?? 0) * sidesMult;
     const rates = {
       construction: framed ? pr.constructionPerSqft : 0,
-      face: (pr.materials[serviceId]?.[key] ?? 0) * sidesMult,
+      face: faceRate,
       lighting: 0,
       printing: printRate,
     };
     const raw = (rates.construction + rates.face + rates.lighting + rates.printing) * areaSqft;
-    return { rates, raw, unitCost: Math.max(pr.minimumCharge || 0, raw * markup), hasTbd: rates.face <= 0 };
-  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing, activePreset, sides, neonColors, psu, leftoverLost]);
+    const afterMarkup = raw * markup;
+    const unitCost = Math.max(pr.minimumCharge || 0, afterMarkup);
+    return {
+      rates,
+      raw,
+      unitCost,
+      hasTbd: faceRate <= 0,
+      breakdown: {
+        construction: rates.construction * areaSqft,
+        face: rates.face * areaSqft,
+        lighting: 0,
+        printing: rates.printing * areaSqft,
+        markup: unitCost - raw,
+      } as LineItem["breakdown"],
+    };
+  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
