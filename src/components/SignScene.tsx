@@ -59,6 +59,9 @@ interface SignSceneProps {
   depthUnit?: LenUnit;
   /** Hide white studio background (checkerboard / transparent) — useful for clear acrylic */
   clearBackground?: boolean;
+  /** Logo size as % of face width / height (independent so client can stretch corner-to-corner) */
+  logoScaleW?: number;
+  logoScaleH?: number;
 }
 
 
@@ -136,7 +139,13 @@ function DimLine({
   );
 }
 
-function LogoFace({ w, h, depth, logoUrl, circle = false }: { w: number; h: number; depth: number; logoUrl: string; circle?: boolean }) {
+function LogoFace({
+  w, h, depth, logoUrl, circle = false, scaleW = 100, scaleH = 100,
+}: {
+  w: number; h: number; depth: number; logoUrl: string; circle?: boolean;
+  /** % of face width / height — independent stretch to fill acrylic box */
+  scaleW?: number; scaleH?: number;
+}) {
   const texture = useTexture(logoUrl);
   useEffect(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -150,9 +159,13 @@ function LogoFace({ w, h, depth, logoUrl, circle = false }: { w: number; h: numb
     texture.premultiplyAlpha = false;
     texture.needsUpdate = true;
   }, [texture]);
+  const sw = Math.max(0.05, Math.min(1.2, (scaleW ?? 100) / 100));
+  const sh = Math.max(0.05, Math.min(1.2, (scaleH ?? 100) / 100));
+  const lw = w * sw;
+  const lh = h * sh;
   return (
     <mesh position={[0, 0, depth / 2 + 0.008]}>
-      {circle ? <circleGeometry args={[w / 2, 64]} /> : <planeGeometry args={[w, h]} />}
+      {circle ? <circleGeometry args={[Math.min(lw, lh) / 2, 64]} /> : <planeGeometry args={[lw, lh]} />}
       <meshBasicMaterial
         map={texture}
         toneMapped={false}
@@ -414,13 +427,14 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
 }
 
 /** Logo image, or the placeholder text, on the +Z face. */
-function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outline, maxWidth }: {
+function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outline, maxWidth, logoScaleW, logoScaleH }: {
   w: number; h: number; depth: number; logoUrl?: string; circle?: boolean; fontSize: number; color: string; outline: string; maxWidth: number;
+  logoScaleW?: number; logoScaleH?: number;
 }) {
   if (logoUrl) {
     return (
       <Suspense fallback={null}>
-        <LogoFace w={w} h={h} depth={depth} logoUrl={logoUrl} circle={circle} />
+        <LogoFace w={w} h={h} depth={depth} logoUrl={logoUrl} circle={circle} scaleW={logoScaleW} scaleH={logoScaleH} />
       </Suspense>
     );
   }
@@ -441,7 +455,7 @@ function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outlin
   );
 }
 
-function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit }: SignSceneProps) {
+function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
   const w = Math.max(0.5, widthFt);
   const h = Math.max(0.3, heightFt);
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -470,6 +484,7 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
         w={aw} h={ah} depth={depth} logoUrl={logoUrl}
         fontSize={Math.min(aw * 0.14, ah * 0.28)} maxWidth={aw * 0.9}
         color={isNeon ? "#ff4fd8" : "#222222"} outline={isNeon ? "#ffd1f5" : "#ffffff"}
+        logoScaleW={logoScaleW} logoScaleH={logoScaleH}
       />
     </>
   );
@@ -524,7 +539,7 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   );
 }
 
-function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit }: SignSceneProps) {
+function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
   const d = Math.max(0.5, widthFt);
   const r = d / 2;
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -571,6 +586,7 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
         w={isLightbox ? faceR * 2 : d} h={isLightbox ? faceR * 2 : d} depth={depth} logoUrl={logoUrl} circle
         fontSize={Math.min(d * 0.16, 0.6)} maxWidth={d * 0.75}
         color={isNeon ? "#ff4fd8" : "#222222"} outline={isNeon ? "#ffd1f5" : "#ffffff"}
+        logoScaleW={logoScaleW} logoScaleH={logoScaleH}
       />
     </>
   );
@@ -685,7 +701,7 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
 
 
 /** Acrylic panel held off the wall by advertising bolts (standoffs) — flat cut, printed with sticker / UV. */
-function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, showDimensions = true, unit, depthUnit }: SignSceneProps & { bolts: BoltSpec }) {
+function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, showDimensions = true, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps & { bolts: BoltSpec }) {
   const circle = shape === "circle";
   const w = Math.max(0.5, widthFt);
   const h = circle ? w : Math.max(0.3, heightFt);
@@ -733,7 +749,8 @@ function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, show
 
       {/* printed artwork (sticker / UV) */}
       <Artwork w={circle ? art : w - inset * 3} h={circle ? art : h - inset * 3} depth={pt} logoUrl={logoUrl} circle={circle}
-        fontSize={Math.min(w * 0.14, h * 0.28)} maxWidth={Math.max(0.3, w - inset * 3.2)} color={tint.ink} outline={tint.outline} />
+        fontSize={Math.min(w * 0.14, h * 0.28)} maxWidth={Math.max(0.3, w - inset * 3.2)} color={tint.ink} outline={tint.outline}
+        logoScaleW={logoScaleW} logoScaleH={logoScaleH} />
 
       {/* advertising bolts: barrel behind the panel + round cap on the face */}
       {points.map(([x, y], i) => (

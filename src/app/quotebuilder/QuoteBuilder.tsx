@@ -295,6 +295,9 @@ export default function QuoteBuilder() {
   /** Original logo before white-BG removal (so user can restore) */
   const [logoOriginal, setLogoOriginal] = useState("");
   const [logoBgCleared, setLogoBgCleared] = useState(false);
+  /** Logo size on the face (% of panel W / H) — independent so client can stretch corner-to-corner */
+  const [logoScaleW, setLogoScaleW] = useState(90);
+  const [logoScaleH, setLogoScaleH] = useState(90);
   /** Draft strings so size fields can be cleared and typed freely */
   const [dimUnit, setDimUnit] = useState<LenUnit>("ft");
   const [depthUnit, setDepthUnit] = useState<LenUnit>("in");
@@ -548,6 +551,59 @@ export default function QuoteBuilder() {
   };
 
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
+
+  /** Reset builder to a blank new build (after draft save or “start over”) */
+  const resetBuildForm = useCallback(() => {
+    setShape("rect");
+    setServiceId("panaflex");
+    setSides("single");
+    setCustomName("");
+    setLbBuild("builtup");
+    setWidth(4);
+    setHeight(2);
+    setDiameter(2);
+    setThicknessIn(2);
+    setQty(1);
+    setLighting("without");
+    setPrinting("sticker");
+    setPresetId("");
+    setLetterText("BRAND");
+    setLetterFont("helvetiker");
+    setLetterHeightIn(12);
+    setLetterDepthIn(2);
+    setLetterGlow("halo");
+    setNeonBacking("clear");
+    setNeonColors(1);
+    setPsu(0);
+    setLeftoverLost(false);
+    setMounting("wall");
+    setArmCount(1);
+    setBodyColor("#ffffff");
+    setReturnColor("#1a1a1a");
+    setNote("");
+    setLogoUrl("");
+    setLogoPreview("");
+    setLogoOriginal("");
+    setLogoBgCleared(false);
+    setLogoScaleW(90);
+    setLogoScaleH(90);
+    setBoltFinish("chrome");
+    setBoltCount(4);
+    setPanelTint("clear");
+    setStandoffMm(25);
+    setBuildStep(1);
+    setDimUnit("ft");
+    setDepthUnit("in");
+    setLetterUnit("in");
+    setSitePhoto("");
+    setSiteMockup("");
+    setPlacementNote("");
+    setPinPos({ x: 50, y: 45 });
+    setPinScale(28);
+    setPinStretchX(100);
+    setPinStretchY(100);
+    setPinSkew(0);
+  }, []);
   const subtotal = lines.reduce((s, l) => s + l.unitCost * l.qty, 0);
   const mobilDefault = lines.some((l) => l.areaSqft > qs.presetSettings.mobilThresholdSqft) ? qs.presetSettings.mobilLarge : qs.presetSettings.mobilSmall;
   const mobil = lines.length === 0 ? 0 : (mobilization ?? mobilDefault);
@@ -737,7 +793,7 @@ export default function QuoteBuilder() {
           setSaving(false);
           return;
         }
-        setMsg(`Updated draft “${name}”.`);
+        setMsg(`Updated draft “${name}”. Builder cleared for a new quote.`);
       } else {
         const { data, error } = await sb
           .from("quotes")
@@ -755,14 +811,22 @@ export default function QuoteBuilder() {
           setSaving(false);
           return;
         }
-        const savedId = (data?.id as string) || null;
-        if (savedId) setEditingDraftId(savedId);
-        setMsg(`Saved draft “${name}”. Open My drafts anytime to edit.`);
+        setMsg(`Saved draft “${name}”. Builder cleared — start a new build anytime.`);
       }
     }
+    // Clear local build + quote so user starts a fresh build (draft is already stored)
+    setLines([]);
+    setDraftName("");
+    setEditingDraftId(null);
+    setDiscount(0);
+    setMobilization(null);
+    setDeliveryType("normal");
+    setShippingFee(0);
+    setPreparedBy("");
+    resetBuildForm();
     setSaving(false);
     setTimeout(() => setMsg(""), 4000);
-  }, [quoteNo, client, lines, subtotal, discount, deliveryType, rushPct, rush, shipping, vat, grand, preparedBy, qs.preparedByTitle, draftName, editingDraftId]);
+  }, [quoteNo, client, lines, subtotal, discount, deliveryType, rushPct, rush, shipping, vat, grand, preparedBy, qs.preparedByTitle, draftName, editingDraftId, resetBuildForm]);
 
   const downloadImage = useCallback(async (format: "png" | "jpeg") => {
     const el = quoteSheetRef.current;
@@ -1431,7 +1495,7 @@ export default function QuoteBuilder() {
                 </label>
               </div>
               {activeLogo && (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className="flex items-center gap-3 rounded-xl border border-line bg-white p-3">
                     <img src={activeLogo} alt="Client logo" className="h-16 w-32 object-contain" />
                     <div className="flex flex-col gap-1.5 flex-1 min-w-0">
@@ -1459,6 +1523,8 @@ export default function QuoteBuilder() {
                           setLogoPreview("");
                           setLogoOriginal("");
                           setLogoBgCleared(false);
+                          setLogoScaleW(90);
+                          setLogoScaleH(90);
                         }}
                         className="text-xs text-red-500 text-left hover:underline"
                       >
@@ -1469,6 +1535,39 @@ export default function QuoteBuilder() {
                   {logoBgCleared && (
                     <p className="text-[11px] text-fog">White / light background removed — logo is transparent for clear acrylic preview.</p>
                   )}
+                  <div className="rounded-xl border border-line bg-ink/30 p-3 space-y-2">
+                    <p className="text-[11px] font-semibold text-fog uppercase tracking-wider">Logo size on panel</p>
+                    <p className="text-[11px] text-fog">Stretch W and H separately if the logo ratio doesn’t match the acrylic box. 100% = edge to edge.</p>
+                    <label className="flex items-center gap-2 text-xs text-fog">
+                      <span className="w-16 shrink-0">Width</span>
+                      <input type="range" min={20} max={110} value={logoScaleW} onChange={(e) => setLogoScaleW(+e.target.value)} className="flex-1" />
+                      <span className="w-10 text-right font-semibold text-white">{logoScaleW}%</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-fog">
+                      <span className="w-16 shrink-0">Height</span>
+                      <input type="range" min={20} max={110} value={logoScaleH} onChange={(e) => setLogoScaleH(+e.target.value)} className="flex-1" />
+                      <span className="w-10 text-right font-semibold text-white">{logoScaleH}%</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button type="button" onClick={() => { setLogoScaleW(100); setLogoScaleH(100); }} className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold text-fog hover:border-gold hover:text-white">
+                        Fill panel (100%)
+                      </button>
+                      <button type="button" onClick={() => { setLogoScaleW(90); setLogoScaleH(90); }} className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold text-fog hover:border-gold hover:text-white">
+                        Reset 90%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const m = Math.min(logoScaleW, logoScaleH);
+                          setLogoScaleW(m);
+                          setLogoScaleH(m);
+                        }}
+                        className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold text-fog hover:border-gold hover:text-white"
+                      >
+                        Lock square
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="flex justify-between pt-1 gap-2">
@@ -1514,7 +1613,7 @@ export default function QuoteBuilder() {
               </div>
               <div className="flex justify-between pt-1 gap-2">
                 <button type="button" onClick={() => setBuildStep(5)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
-                <button type="button" onClick={() => setBuildStep(1)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">New sign · start over</button>
+                <button type="button" onClick={() => resetBuildForm()} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">New sign · start over</button>
               </div>
             </div>
             )}
@@ -1553,6 +1652,8 @@ export default function QuoteBuilder() {
                   depthUnit={depthUnit}
                   text="Your Logo"
                   logoUrl={activeLogo}
+                  logoScaleW={logoScaleW}
+                  logoScaleH={logoScaleH}
                   showDimensions
                   faceLabel={faceLabel}
                   sidesLabel={sidesLabel}
