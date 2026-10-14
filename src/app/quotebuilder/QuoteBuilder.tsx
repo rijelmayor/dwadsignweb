@@ -699,12 +699,13 @@ export default function QuoteBuilder() {
       setMsg("This draft has no filename and cannot be opened.");
       return;
     }
-    const linesArr = d.raw?.lines ?? [];
+    const linesArr = (d.raw?.lines ?? []) as LineItem[];
     const totals = d.raw?.totals ?? {};
     if (totals.archived) {
       setMsg("This draft was deleted.");
       return;
     }
+    // Restore quote items (with renders) onto the sheet
     setLines(linesArr);
     setDiscount(Number(totals.discount ?? 0));
     setMobilization(totals.mobilization == null ? null : Number(totals.mobilization));
@@ -714,8 +715,67 @@ export default function QuoteBuilder() {
     setDraftName(d.draftName);
     setEditingDraftId(d.id);
     setShowDrafts(false);
-    setMsg(`Opened draft “${d.draftName}” — edit then Save to update.`);
-    setTimeout(() => setMsg(""), 3500);
+
+    // Restore builder from the last sign so Live 3D + wizard match the draft
+    const last = linesArr[linesArr.length - 1];
+    if (last) {
+      setServiceId(last.serviceId || "panaflex");
+      setShape(last.shape || "rect");
+      setWidth(last.width || 4);
+      setHeight(last.height || 2);
+      setDiameter(last.diameter || 2);
+      setThicknessIn(last.thicknessIn || 2);
+      setQty(last.qty || 1);
+      if (last.unit) setDimUnit(last.unit);
+      if (last.depthUnit) setDepthUnit(last.depthUnit);
+      if (last.logoUrl) {
+        setLogoPreview(last.logoUrl);
+        setLogoOriginal(last.logoUrl);
+        setLogoUrl("");
+        setLogoBgCleared(false);
+      } else {
+        setLogoUrl("");
+        setLogoPreview("");
+        setLogoOriginal("");
+        setLogoBgCleared(false);
+      }
+      // Best-effort lighting / print from labels
+      if (/with\s*light/i.test(last.lighting || "") && !/without/i.test(last.lighting || "")) {
+        setLighting("with");
+      } else {
+        setLighting("without");
+      }
+      if (/uv/i.test(last.printing || "")) setPrinting("uv");
+      else if (/cut/i.test(last.printing || "")) setPrinting("cut");
+      else if (last.printing) setPrinting("sticker");
+      // Acrylic bolt presets from face text
+      if (/3\s*mm/i.test(last.face || "") && /bolt/i.test(last.mounting || last.face || "")) {
+        setPresetId("ac-3mm");
+      } else if (/5\s*mm/i.test(last.face || "") && /uv/i.test(last.face || "")) {
+        setPresetId("ac-5mm-uv");
+      } else if (/5\s*mm/i.test(last.face || "") && /bolt/i.test(last.mounting || last.face || "")) {
+        setPresetId("ac-5mm");
+      } else {
+        setPresetId("");
+      }
+      if (/double/i.test(last.face || "")) setSides("double");
+      else setSides("single");
+      setNote(last.note || "");
+      setBuildStep(6);
+    } else {
+      resetBuildForm();
+    }
+
+    setMsg(
+      linesArr.length > 0
+        ? `Opened draft “${d.draftName}” · ${linesArr.length} item${linesArr.length === 1 ? "" : "s"} restored. Edit then Save to update.`
+        : `Opened draft “${d.draftName}” — no items yet.`
+    );
+    setTimeout(() => setMsg(""), 4500);
+    // Scroll proposal sheet into view so restored previews are visible
+    setTimeout(() => {
+      quoteSheetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   };
 
   const deleteDraft = async (d: DraftRow) => {
@@ -1853,48 +1913,48 @@ export default function QuoteBuilder() {
                       <p className="text-sm font-bold text-[#011424]">₱{fmt(l.unitCost * l.qty)}</p>
                     </div>
 
-                    {/* Multi-view — clear labels for clients */}
-                    <div className="grid grid-cols-12 gap-0 bg-white">
-                      <div className="col-span-5 sm:col-span-5 border-r border-gray-200 p-2 bg-[#fafbfc]">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">3D preview</p>
-                        {l.renders.iso ? (
-                          <img src={l.renders.iso} alt="3D" className="w-full h-40 object-contain bg-white rounded-lg border border-gray-100" />
-                        ) : (
-                          <div className="h-40 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
-                        )}
-                      </div>
-                      <div className="col-span-7 flex flex-col">
-                        <div className="flex gap-2 p-2 border-b border-gray-200">
-                          <div className="flex-1">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Front</p>
+                    {/* Multi-view — images first & larger for client visibility */}
+                    <div className="bg-white">
+                      <div className="grid grid-cols-12 gap-0 border-b border-gray-200">
+                        <div className="col-span-12 sm:col-span-5 border-b sm:border-b-0 sm:border-r border-gray-200 p-3 bg-[#fafbfc]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">3D preview</p>
+                          {l.renders.iso ? (
+                            <img src={l.renders.iso} alt="3D" className="w-full h-52 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
+                          ) : (
+                            <div className="h-52 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
+                          )}
+                        </div>
+                        <div className="col-span-12 sm:col-span-7 flex flex-col sm:flex-row gap-0">
+                          <div className="flex-1 p-3 border-b sm:border-b-0 sm:border-r border-gray-200">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Front</p>
                             {l.renders.front ? (
-                              <img src={l.renders.front} alt="Front" className="w-full h-24 object-contain bg-white rounded border border-gray-100" />
+                              <img src={l.renders.front} alt="Front" className="w-full h-40 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
                             ) : (
-                              <div className="h-24 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded bg-white">—</div>
+                              <div className="h-40 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
                             )}
                           </div>
-                          <div className="w-[36%]">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Side</p>
+                          <div className="w-full sm:w-[38%] p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Side</p>
                             {l.renders.side ? (
-                              <img src={l.renders.side} alt="Side" className="w-full h-24 object-contain bg-white rounded border border-gray-100" />
+                              <img src={l.renders.side} alt="Side" className="w-full h-40 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
                             ) : (
-                              <div className="h-24 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded bg-white">—</div>
+                              <div className="h-40 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
                             )}
                           </div>
                         </div>
-                        <div className="p-2.5 text-[11px] leading-snug grow">
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5">
-                            <div><span className="text-gray-500 text-[9px] uppercase">Size</span><br /><strong>{size}</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Depth</span><br /><strong>{fmtLen(l.thicknessIn / 12, l.depthUnit ?? "in")}</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Area</span><br /><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Qty</span><br /><strong>{l.qty}</strong></div>
-                            <div className="col-span-2"><span className="text-gray-500 text-[9px] uppercase">Material</span><br /><strong>{l.face}</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Lighting</span><br /><strong>{l.lighting}</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Print</span><br /><strong>{l.printing || "—"}</strong></div>
-                            <div className="col-span-2 sm:col-span-4"><span className="text-gray-500 text-[9px] uppercase">Mounting</span><br /><strong>{l.mounting}</strong></div>
-                          </div>
-                          {l.note && <p className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1"><strong>Note:</strong> {l.note}</p>}
+                      </div>
+                      <div className="p-3 text-[11px] leading-snug">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5">
+                          <div><span className="text-gray-500 text-[9px] uppercase">Size</span><br /><strong>{size}</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Depth</span><br /><strong>{fmtLen(l.thicknessIn / 12, l.depthUnit ?? "in")}</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Area</span><br /><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Qty</span><br /><strong>{l.qty}</strong></div>
+                          <div className="col-span-2"><span className="text-gray-500 text-[9px] uppercase">Material</span><br /><strong>{l.face}</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Lighting</span><br /><strong>{l.lighting}</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Print</span><br /><strong>{l.printing || "—"}</strong></div>
+                          <div className="col-span-2 sm:col-span-4"><span className="text-gray-500 text-[9px] uppercase">Mounting</span><br /><strong>{l.mounting}</strong></div>
                         </div>
+                        {l.note && <p className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1"><strong>Note:</strong> {l.note}</p>}
                       </div>
                     </div>
 
@@ -1958,23 +2018,9 @@ export default function QuoteBuilder() {
               </div>
             )}
 
-            {/* Simple terms */}
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px] text-gray-600 leading-relaxed">
-              <p className="font-bold text-[11px] text-gray-700 mb-1">Good to know</p>
-              <ul className="list-disc pl-4 space-y-0.5">
-                <li>Sizes shown in feet. Final measure on site before production.</li>
-                <li>Price includes the options listed above. Install / permit fees quoted separately if needed.</li>
-                <li>This is a proposal — not a final invoice until confirmed.</li>
-              </ul>
-              {qs.terms?.length > 0 && (
-                <div className="mt-1.5 pt-1.5 border-t border-gray-200">
-                  {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Totals + prepared by */}
+          {/* Totals + prepared by — before terms so images & price stay primary */}
           <div className="border-t border-gray-200 grid grid-cols-1 sm:grid-cols-3 text-[11px]">
             <div className="p-3 border-b sm:border-b-0 sm:border-r border-gray-200">
               <p className="text-gray-500 uppercase tracking-wider text-[9px]">Prepared by</p>
@@ -2020,6 +2066,21 @@ export default function QuoteBuilder() {
               <p className="mt-1 text-sm font-semibold">Reply to confirm or request changes.</p>
               <p className="text-gray-500 text-[10px] mt-1">Quote no. {quoteNo}</p>
             </div>
+          </div>
+
+          {/* Terms at the bottom — after images & price */}
+          <div className="border-t border-gray-200 px-4 py-3 text-[10px] text-gray-600 leading-relaxed bg-gray-50">
+            <p className="font-bold text-[11px] text-gray-700 mb-1">Good to know</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li>Sizes shown in feet. Final measure on site before production.</li>
+              <li>Price includes the options listed above. Install / permit fees quoted separately if needed.</li>
+              <li>This is a proposal — not a final invoice until confirmed.</li>
+            </ul>
+            {qs.terms?.length > 0 && (
+              <div className="mt-1.5 pt-1.5 border-t border-gray-200">
+                {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
+              </div>
+            )}
           </div>
 
           <div className="no-export px-4 py-3 border-t border-gray-100 bg-gray-50 space-y-2">
