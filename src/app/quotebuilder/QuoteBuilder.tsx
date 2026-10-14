@@ -107,7 +107,7 @@ interface DraftRow {
   created_at: string;
   grand: number;
   itemCount: number;
-  source: "supabase" | "local";
+  source: "supabase";
   raw?: { client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown> };
 }
 
@@ -496,123 +496,56 @@ export default function QuoteBuilder() {
     return n.length > 0;
   };
 
-  const readLocalDrafts = (): DraftRow[] => {
-    try {
-      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw) as Array<{
-        id: string; quote_no: string; draftName: string; created_at: string;
-        client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown>;
-      }>;
-      return arr
-        .filter((d) => hasRealName(d.draftName) || hasRealName((d.totals as { draftName?: string })?.draftName))
-        .map((d) => {
-          const name = String(d.draftName || (d.totals as { draftName?: string })?.draftName || "").trim();
-          return {
-            id: d.id,
-            quote_no: d.quote_no,
-            draftName: name,
-            created_at: d.created_at,
-            grand: Number((d.totals as { grand?: number })?.grand ?? 0),
-            itemCount: d.lines?.length ?? 0,
-            source: "local" as const,
-            raw: { client: d.client, lines: d.lines, totals: d.totals },
-          };
-        })
-        .filter((d) => hasRealName(d.draftName));
-    } catch {
-      return [];
-    }
-  };
-
-  const writeLocalDraft = (entry: {
-    id: string; quote_no: string; draftName: string; created_at: string;
-    client: ClientInfo; lines: LineItem[]; totals: Record<string, unknown>;
-  }) => {
-    if (!hasRealName(entry.draftName)) return; // never persist unnamed
-    try {
-      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
-      const arr = raw ? (JSON.parse(raw) as typeof entry[]) : [];
-      // Drop any unnamed junk while we're at it
-      const cleaned = arr.filter((x) => hasRealName(x.draftName));
-      const idx = cleaned.findIndex((x) => x.id === entry.id);
-      if (idx >= 0) cleaned[idx] = entry;
-      else cleaned.unshift(entry);
-      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(cleaned.slice(0, 40)));
-    } catch { /* ignore quota */ }
-  };
-
-  const deleteLocalDraft = (id: string) => {
+  /** One-time rescue: drafts saved on this device by the old offline mode are uploaded to Supabase, then cleared. */
+  const migrateLegacyLocalDrafts = async (sb: NonNullable<ReturnType<typeof createClient>>) => {
     try {
       const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
       if (!raw) return;
-      const arr = JSON.parse(raw) as { id: string }[];
-      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(arr.filter((x) => x.id !== id)));
-    } catch { /* ignore */ }
-  };
-
-  const getDeletedIds = (): Set<string> => {
-    try {
-      const raw = localStorage.getItem(DELETED_DRAFTS_KEY);
-      if (!raw) return new Set();
-      return new Set(JSON.parse(raw) as string[]);
-    } catch {
-      return new Set();
-    }
-  };
-
-  const markDeletedId = (id: string) => {
-    try {
-      const set = getDeletedIds();
-      set.add(id);
-      localStorage.setItem(DELETED_DRAFTS_KEY, JSON.stringify([...set].slice(-200)));
-    } catch { /* ignore */ }
-  };
-
-  /** One-time cleanup of local junk + return named drafts only */
-  const purgeUnnamedLocal = () => {
-    try {
-      const raw = localStorage.getItem(LOCAL_DRAFTS_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw) as Array<{ draftName?: string; totals?: { draftName?: string } }>;
-      const cleaned = arr.filter((x) => hasRealName(x.draftName) || hasRealName(x.totals?.draftName));
-      localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(cleaned));
+      const gone = new Set<string>(JSON.parse(localStorage.getItem(DELETED_DRAFTS_KEY) || "[]"));
+      const arr = JSON.parse(raw) as Array<{ id: string; quote_no: string; draftName?: string; created_at?: string; client?: ClientInfo; lines?: LineItem[]; totals?: Record<string, unknown> }>;
+      let failed = false;
+      for (const d of arr) {
+        const name = String(d.draftName || (d.totals as { draftName?: string })?.draftName || "").trim();
+        if (!name || gone.has(d.id)) continue;
+        const { error } = await sb.from("quotes").upsert(
+          { id: d.id, quote_no: d.quote_no, client: d.client ?? {}, lines: d.lines ?? [], totals: { ...(d.totals ?? {}), draftName: name }, status: "draft", created_at: d.created_at },
+          { onConflict: "id", ignoreDuplicates: true },
+        );
+        if (error) failed = true;
+      }
+      if (!failed) { localStorage.removeItem(LOCAL_DRAFTS_KEY); localStorage.removeItem(DELETED_DRAFTS_KEY); }
     } catch { /* ignore */ }
   };
 
   const loadDrafts = useCallback(async () => {
     setLoadingDrafts(true);
-    purgeUnnamedLocal();
-    const deletedIds = getDeletedIds();
-    const local = readLocalDrafts().filter((d) => !deletedIds.has(d.id));
     const sb = createClient();
     if (!sb) {
-      setDrafts(local);
+      setDrafts([]);
+      setMsg("Database not connected — drafts cannot be loaded. Check the Supabase environment variables.");
       setLoadingDrafts(false);
       return;
     }
+    await migrateLegacyLocalDrafts(sb);
     const { data, error } = await sb
       .from("quotes")
       .select("id, quote_no, client, lines, totals, status, created_at")
       .eq("status", "draft")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(100);
     if (error) {
       setMsg(`Could not load drafts: ${error.message}`);
-      setDrafts(local);
       setLoadingDrafts(false);
       return;
     }
-    // Only show drafts with a real filename, not soft-deleted, not locally deleted
     const remote: DraftRow[] = (data ?? [])
       .map((row) => {
         const totals = (row.totals ?? {}) as Record<string, unknown>;
-        const name = String(totals.draftName ?? "").trim();
         const linesArr = (row.lines ?? []) as LineItem[];
         return {
           id: row.id as string,
           quote_no: row.quote_no as string,
-          draftName: name,
+          draftName: String(totals.draftName ?? "").trim(),
           created_at: row.created_at as string,
           grand: Number(totals.grand ?? 0),
           itemCount: linesArr.length,
@@ -621,21 +554,21 @@ export default function QuoteBuilder() {
           archived: Boolean(totals.archived),
         };
       })
-      .filter((d) => hasRealName(d.draftName) && !d.archived && !deletedIds.has(d.id))
+      .filter((d) => hasRealName(d.draftName) && !d.archived)
       .map(({ archived: _a, ...d }) => d);
-
-    const remoteIds = new Set(remote.map((r) => r.id));
-    const localOnly = local.filter((l) => !remoteIds.has(l.id) && !deletedIds.has(l.id));
-    setDrafts([...remote, ...localOnly]);
+    setDrafts(remote);
     setLoadingDrafts(false);
   }, []);
 
+  /** Removes a draft from Supabase. Soft-delete first (works with the UPDATE policy), then a hard delete. */
+  const removeDraftOnServer = async (sb: NonNullable<ReturnType<typeof createClient>>, d: DraftRow) => {
+    const prev = (d.raw?.totals ?? {}) as Record<string, unknown>;
+    const { error: upErr } = await sb.from("quotes").update({ status: "lost", totals: { ...prev, archived: true, draftName: d.draftName } }).eq("id", d.id);
+    const { error: delErr } = await sb.from("quotes").delete().eq("id", d.id);
+    return !upErr || !delErr;
+  };
+
   const openDraft = (d: DraftRow) => {
-    if (getDeletedIds().has(d.id)) {
-      setMsg("This draft was deleted.");
-      setDrafts((prev) => prev.filter((x) => x.id !== d.id));
-      return;
-    }
     if (!hasRealName(d.draftName)) {
       setMsg("This draft has no filename and cannot be opened.");
       return;
@@ -661,37 +594,24 @@ export default function QuoteBuilder() {
 
   const deleteDraft = async (d: DraftRow) => {
     if (!confirm(`Delete draft “${d.draftName}”?`)) return;
-    // 1) Hide immediately on this device
-    markDeletedId(d.id);
-    deleteLocalDraft(d.id);
+    const sb = createClient();
+    if (!sb) {
+      setMsg("Database not connected — cannot delete.");
+      return;
+    }
+    const ok = await removeDraftOnServer(sb, d);
+    if (!ok) {
+      setMsg("Could not delete the draft on the server. Try again.");
+      setTimeout(() => setMsg(""), 3000);
+      return;
+    }
     setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     if (editingDraftId === d.id) {
       setEditingDraftId(null);
       setDraftName("");
       setLines([]);
     }
-
-    // 2) Soft-delete on server (works with existing UPDATE policy)
-    // 3) Try hard delete if DELETE policy is present
-    const sb = createClient();
-    if (sb) {
-      const prevTotals = (d.raw?.totals ?? {}) as Record<string, unknown>;
-      const { error: upErr } = await sb
-        .from("quotes")
-        .update({
-          status: "lost",
-          totals: { ...prevTotals, archived: true, draftName: d.draftName },
-        })
-        .eq("id", d.id);
-      const { error: delErr } = await sb.from("quotes").delete().eq("id", d.id);
-      if (upErr && delErr) {
-        setMsg(`Removed from this device. Server delete may need SQL policy (see README).`);
-      } else {
-        setMsg("Draft deleted.");
-      }
-    } else {
-      setMsg("Draft deleted on this device.");
-    }
+    setMsg("Draft deleted.");
     setTimeout(() => setMsg(""), 3000);
   };
 
@@ -725,9 +645,12 @@ export default function QuoteBuilder() {
     };
     const linePayload = lines.map((l) => ({ ...l, amount: l.unitCost * l.qty }));
     const sb = createClient();
-    let savedId = editingDraftId;
-
-    if (sb) {
+    if (!sb) {
+      setMsg("Database not connected — quote not saved. Check the Supabase environment variables.");
+      setSaving(false);
+      return;
+    }
+    {
       if (editingDraftId) {
         const { error } = await sb
           .from("quotes")
@@ -762,27 +685,10 @@ export default function QuoteBuilder() {
           setSaving(false);
           return;
         }
-        savedId = (data?.id as string) || null;
+        const savedId = (data?.id as string) || null;
         if (savedId) setEditingDraftId(savedId);
         setMsg(`Saved draft “${name}”. Open My drafts anytime to edit.`);
       }
-    } else {
-      savedId = editingDraftId || crypto.randomUUID();
-      setEditingDraftId(savedId);
-      setMsg(`Saved draft “${name}” on this device (offline).`);
-    }
-
-    // Mirror named draft locally so list stays consistent on this device
-    if (savedId && name) {
-      writeLocalDraft({
-        id: savedId,
-        quote_no: quoteNo,
-        draftName: name,
-        created_at: new Date().toISOString(),
-        client,
-        lines: linePayload,
-        totals,
-      });
     }
     setSaving(false);
     setTimeout(() => setMsg(""), 4000);
@@ -903,7 +809,7 @@ export default function QuoteBuilder() {
               Quote Builder <span className="text-fog font-normal">· for sales</span>
             </span>
             {supabaseOk === false && (
-              <span className="text-[10px] rounded bg-amber-500/20 text-amber-300 px-2 py-0.5 border border-amber-500/40 shrink-0">Offline mode</span>
+              <span className="text-[10px] rounded bg-red-500/20 text-red-300 px-2 py-0.5 border border-red-500/40 shrink-0">Database not connected — saving disabled</span>
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -951,14 +857,15 @@ export default function QuoteBuilder() {
                     onClick={async () => {
                       if (!confirm("Delete ALL named drafts from this list?")) return;
                       const sb = createClient();
+                      if (!sb) { setMsg("Database not connected — cannot delete."); return; }
+                      const failedIds: string[] = [];
                       for (const d of drafts) {
-                        markDeletedId(d.id);
-                        deleteLocalDraft(d.id);
-                        if (sb) {
-                          const prev = (d.raw?.totals ?? {}) as Record<string, unknown>;
-                          await sb.from("quotes").update({ status: "lost", totals: { ...prev, archived: true, draftName: d.draftName } }).eq("id", d.id);
-                          await sb.from("quotes").delete().eq("id", d.id);
-                        }
+                        if (!(await removeDraftOnServer(sb, d))) failedIds.push(d.id);
+                      }
+                      if (failedIds.length) {
+                        setDrafts((prev) => prev.filter((x) => failedIds.includes(x.id)));
+                        setMsg(`${failedIds.length} draft(s) could not be deleted on the server.`);
+                        return;
                       }
                       setDrafts([]);
                       setEditingDraftId(null);
@@ -1008,7 +915,6 @@ export default function QuoteBuilder() {
                     <p className="text-sm font-semibold truncate">{d.draftName}</p>
                     <p className="text-[10px] text-fog">
                       {d.quote_no} · {d.itemCount} item{d.itemCount !== 1 ? "s" : ""} · ₱{fmt(d.grand)} · {new Date(d.created_at).toLocaleDateString()}
-                      {d.source === "local" ? " · this device" : ""}
                     </p>
                   </div>
                   <button type="button" onClick={() => openDraft(d)} className="rounded-full bg-gold text-ink px-3 py-1.5 text-xs font-bold">
