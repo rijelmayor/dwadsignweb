@@ -50,6 +50,8 @@ export interface PresetSettings {
   minimum: Record<string, number>;
   sheets: SheetPrices;
   neonColorAddonPct: number;
+  /** Surcharge on the items subtotal when the client asks for a rush order */
+  rushPct: number;
   mobilSmall: number; mobilLarge: number; mobilThresholdSqft: number;
 }
 const MIN: Record<Family, number> = { flex: 2500, apc: 2000, acrylic: 1500, metal: 2000, neon: 3500, sticker: 500, roundbox: 3500 };
@@ -59,6 +61,7 @@ export const DEFAULT_PRESET_SETTINGS: PresetSettings = {
   minimum: MIN,
   sheets: { thinPiece: 1000, thinFull: 2800, thickFull: 4500 },
   neonColorAddonPct: 25,
+  rushPct: 30,
   mobilSmall: 500, mobilLarge: 1000, mobilThresholdSqft: 30,
 };
 const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -71,6 +74,7 @@ export function mergePresetSettings(raw: unknown): PresetSettings {
     minimum: Object.fromEntries(FAMILIES.map(([f]) => [f, n(mn[f], d.minimum[f])])),
     sheets: { thinPiece: n(sh.thinPiece, d.sheets.thinPiece), thinFull: n(sh.thinFull, d.sheets.thinFull), thickFull: n(sh.thickFull, d.sheets.thickFull) },
     neonColorAddonPct: n(r.neonColorAddonPct, d.neonColorAddonPct),
+    rushPct: n(r.rushPct, d.rushPct),
     mobilSmall: n(r.mobilSmall, d.mobilSmall), mobilLarge: n(r.mobilLarge, d.mobilLarge), mobilThresholdSqft: n(r.mobilThresholdSqft, d.mobilThresholdSqft),
   };
 }

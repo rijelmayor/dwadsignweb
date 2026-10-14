@@ -553,7 +553,6 @@ export default function BuilderSettings() {
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div><label className={label}>Markup %</label><input type="number" className={input} value={quote.markupPct} onChange={(e) => setQuote({ ...quote, markupPct: +e.target.value || 0 })} /></div>
-                <div><label className={label}>VAT %</label><input type="number" className={input} value={quote.vatPct} onChange={(e) => setQuote({ ...quote, vatPct: +e.target.value || 0 })} /></div>
                 <div><label className={label}>Quote # prefix</label><input className={input} value={quote.quotePrefix} onChange={(e) => setQuote({ ...quote, quotePrefix: e.target.value })} /></div>
                 <div><label className={label}>Prepared-by title</label><input className={input} value={quote.preparedByTitle} onChange={(e) => setQuote({ ...quote, preparedByTitle: e.target.value })} /></div>
               </div>

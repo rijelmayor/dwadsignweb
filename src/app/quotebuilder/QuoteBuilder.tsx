@@ -2,6 +2,9 @@
 import { presetFor, presetsFor, priceSign } from "@/lib/presets";
 import { LETTER_FONTS, layoutText, useLetterFont } from "@/lib/letters";
 import type { LettersSpec } from "@/components/LettersMesh";
+import UnitField from "@/components/UnitField";
+import { fmtLen, fromFt, fromIn, toFt, toIn, trimNum, type LenUnit } from "@/lib/units";
+import { BOLT_FINISHES, BOLT_PRESET_IDS, PANEL_TINTS, STANDOFF_OPTIONS_MM, type BoltFinish, type BoltSpec, type PanelTint } from "@/lib/bolts";
 
 const NEON_PALETTE = ["#ff4fd8", "#4fd8ff", "#ffe14f", "#7dff4f", "#ff7a4f", "#b388ff"];
 const LETTER_IDS = ["ac-letters-flat", "ac-letters", "ac-letters-lit"];
@@ -33,7 +36,39 @@ const BOX_COLORS: { id: string; label: string; hex: string }[] = [
   { id: "navy", label: "Navy", hex: "#0b1f3a" },
   { id: "red", label: "Red", hex: "#b91c1c" },
   { id: "teal", label: "Teal", hex: "#0d9488" },
+  { id: "blue", label: "Blue", hex: "#1d4ed8" },
+  { id: "green", label: "Green", hex: "#15803d" },
+  { id: "orange", label: "Orange", hex: "#ea580c" },
+  { id: "yellow", label: "Yellow", hex: "#facc15" },
 ];
+const colorName = (hex: string) => BOX_COLORS.find((c) => c.hex.toLowerCase() === hex.toLowerCase())?.label || hex.toUpperCase();
+
+/** Swatches + a custom colour picker. */
+function ColorRow({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (hex: string) => void }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-bold tracking-wider uppercase text-fog mb-1.5">{label}</label>
+      {hint && <p className="text-[11px] text-fog mb-2">{hint}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        {BOX_COLORS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            title={c.label}
+            onClick={() => onChange(c.hex)}
+            className={`w-9 h-9 rounded-full border-2 transition ${value.toLowerCase() === c.hex.toLowerCase() ? "border-gold ring-2 ring-gold/40 scale-110" : "border-white/30 hover:border-white/60"}`}
+            style={{ backgroundColor: c.hex }}
+          />
+        ))}
+        <label title="Custom color" className="relative w-9 h-9 rounded-full border-2 border-dashed border-white/40 hover:border-white/70 overflow-hidden cursor-pointer flex items-center justify-center text-sm text-fog">
+          +
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#ffffff"} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
+        </label>
+      </div>
+      <p className="text-[10px] text-fog mt-1">{colorName(value)}</p>
+    </div>
+  );
+}
 
 interface LineItem {
   id: string;
@@ -45,6 +80,9 @@ interface LineItem {
   /** circle only */
   diameter: number;
   thicknessIn: number;
+  /** Units the sales person typed the size / depth in (price always runs on sqft) */
+  unit?: LenUnit;
+  depthUnit?: LenUnit;
   areaSqft: number;
   qty: number;
   face: string;
@@ -215,6 +253,9 @@ export default function QuoteBuilder() {
   const [psu, setPsu] = useState(0);
   const [leftoverLost, setLeftoverLost] = useState(false);
   const [mobilization, setMobilization] = useState<number | null>(null);
+  /** Quote-level delivery: normal, rush (+rushPct%) or shipping (rate typed in once the courier price is known) */
+  const [deliveryType, setDeliveryType] = useState<"normal" | "rush" | "shipping">("normal");
+  const [shippingFee, setShippingFee] = useState(0);
   const [mounting, setMounting] = useState<Mount>("wall");
   /** 1 = single arm, 2 = double arm (bracket / hanging / pole / pole_single) */
   const [armCount, setArmCount] = useState<1 | 2>(1);
@@ -252,10 +293,14 @@ export default function QuoteBuilder() {
   /** Wizard step 1–6 so Live 3D stays fully visible */
   const [buildStep, setBuildStep] = useState(1);
   /** Draft strings so size fields can be cleared and typed freely */
-  const [widthStr, setWidthStr] = useState("4");
-  const [heightStr, setHeightStr] = useState("2");
-  const [diameterStr, setDiameterStr] = useState("2");
-  const [thicknessStr, setThicknessStr] = useState("2");
+  const [dimUnit, setDimUnit] = useState<LenUnit>("ft");
+  const [depthUnit, setDepthUnit] = useState<LenUnit>("in");
+  const [letterUnit, setLetterUnit] = useState<LenUnit>("in");
+  /** Acrylic panel on advertising bolts */
+  const [boltFinish, setBoltFinish] = useState<BoltFinish>("chrome");
+  const [boltCount, setBoltCount] = useState<4 | 6>(4);
+  const [panelTint, setPanelTint] = useState<PanelTint>("clear");
+  const [standoffMm, setStandoffMm] = useState(25);
   const sceneRef = useRef<SignSceneHandle>(null);
   const quoteSheetRef = useRef<HTMLElement | null>(null);
   const sitePhotoRef = useRef<HTMLDivElement | null>(null);
@@ -321,17 +366,28 @@ export default function QuoteBuilder() {
   const boxH = layout ? Math.round((layout.maxY - layout.minY) * lScale * 100) / 100 : 0;
   useEffect(() => {
     if (!lettersOn || !layout || boxW <= 0 || boxH <= 0) return;
-    setWidth(boxW); setHeight(boxH); setWidthStr(String(boxW)); setHeightStr(String(boxH));
+    setWidth(boxW); setHeight(boxH);
   }, [lettersOn, layout, boxW, boxH]);
   const letterDepthUsed = isNeonText ? 0.5 : flatCut ? 0.2 : letterDepthIn;
   useEffect(() => {
-    if (lettersOn) { setThicknessIn(letterDepthUsed); setThicknessStr(String(letterDepthUsed)); }
+    if (lettersOn) setThicknessIn(letterDepthUsed);
   }, [lettersOn, letterDepthUsed]);
   const lettersSpec: LettersSpec | undefined = layout && lettersOn ? {
     layout, scale: lScale, depthFt: letterDepthUsed / 12, faceFt: flatCut ? letterDepthUsed / 12 : (activePreset?.thick ? 5 : 3) / 304.8,
     faceColor: bodyColor, returnColor, glow: activePreset?.id === "ac-letters-lit" ? letterGlow : "none",
     neon: isNeonText, neonColors: NEON_PALETTE.slice(0, Math.max(1, neonColors)), backing: neonBacking,
   } : undefined;
+  const isBoltPanel = !!activePreset && BOLT_PRESET_IDS.includes(activePreset.id);
+  const panelMm = activePreset?.id === "ac-3mm" ? 3 : 5;
+  const boltSpec: BoltSpec | undefined = isBoltPanel ? { panelMm, standoffMm, count: boltCount, finish: boltFinish, tint: panelTint, diaMm: 25 } : undefined;
+  useEffect(() => {
+    if (!isBoltPanel) return;
+    setMounting("wall");
+    setThicknessIn(Math.round(((panelMm + standoffMm) / 25.4) * 100) / 100);
+  }, [isBoltPanel, panelMm, standoffMm, mounting]);
+  const mountingShown = isBoltPanel
+    ? `Wall · ${boltCount} advertising bolts (${BOLT_FINISHES.find((f) => f.id === boltFinish)?.label.toLowerCase()}, ${standoffMm} mm standoff)`
+    : mountingText;
   const live = useMemo(() => {
     if (activePreset) {
       const pp = priceSign(activePreset, qs.presetSettings, areaSqft, sides === "double", { colors: neonColors, psu, leftoverLost });
@@ -410,8 +466,8 @@ export default function QuoteBuilder() {
     const r = live.rates;
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
-      width: dimW, height: dimH, diameter, thicknessIn, areaSqft, qty,
-      face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · face ${BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor} / depth ${BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingText, note, unitCost: live.unitCost,
+      width: dimW, height: dimH, diameter, thicknessIn, unit: dimUnit, depthUnit, areaSqft, qty,
+      face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · ${isBoltPanel ? `${PANEL_TINTS.find((t) => t.id === panelTint)?.label.toLowerCase()} panel ${panelMm}mm` : `face ${colorName(bodyColor)} / ${isLetters ? "siding" : "depth"} ${colorName(returnColor)}`}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingShown, note, unitCost: live.unitCost,
       breakdown: (live as { breakdown?: LineItem["breakdown"] }).breakdown ?? {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
@@ -425,8 +481,12 @@ export default function QuoteBuilder() {
   const subtotal = lines.reduce((s, l) => s + l.unitCost * l.qty, 0);
   const mobilDefault = lines.some((l) => l.areaSqft > qs.presetSettings.mobilThresholdSqft) ? qs.presetSettings.mobilLarge : qs.presetSettings.mobilSmall;
   const mobil = lines.length === 0 ? 0 : (mobilization ?? mobilDefault);
-  const afterDisc = Math.max(0, subtotal - discount) + mobil;
-  const vat = afterDisc * (qs.vatPct / 100);
+  const rushPct = qs.presetSettings.rushPct;
+  const rush = deliveryType === "rush" ? subtotal * (rushPct / 100) : 0;
+  const shipping = deliveryType === "shipping" ? shippingFee : 0;
+  const afterDisc = Math.max(0, subtotal - discount) + rush + mobil + shipping;
+  /** VAT is not part of our rates; it is added manually on the Official Receipt. */
+  const vat = 0;
   const grand = afterDisc + vat;
   const quoteNo = `${qs.quotePrefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(lines.length || 1).padStart(2, "0")}`;
 
@@ -589,6 +649,8 @@ export default function QuoteBuilder() {
     setLines(linesArr);
     setDiscount(Number(totals.discount ?? 0));
     setMobilization(totals.mobilization == null ? null : Number(totals.mobilization));
+    setDeliveryType(totals.deliveryType === "rush" || totals.deliveryType === "shipping" ? totals.deliveryType : "normal");
+    setShippingFee(Number(totals.shipping ?? 0));
     setPreparedBy(String(totals.preparedBy ?? ""));
     setDraftName(d.draftName);
     setEditingDraftId(d.id);
@@ -651,6 +713,10 @@ export default function QuoteBuilder() {
       sub: subtotal,
       discount,
       mobilization: mobil,
+      deliveryType,
+      rushPct: deliveryType === "rush" ? rushPct : 0,
+      rush,
+      shipping,
       vat,
       grand,
       preparedBy,
@@ -720,7 +786,7 @@ export default function QuoteBuilder() {
     }
     setSaving(false);
     setTimeout(() => setMsg(""), 4000);
-  }, [quoteNo, client, lines, subtotal, discount, vat, grand, preparedBy, qs.preparedByTitle, draftName, editingDraftId]);
+  }, [quoteNo, client, lines, subtotal, discount, deliveryType, rushPct, rush, shipping, vat, grand, preparedBy, qs.preparedByTitle, draftName, editingDraftId]);
 
   const downloadImage = useCallback(async (format: "png" | "jpeg") => {
     const el = quoteSheetRef.current;
@@ -804,43 +870,10 @@ export default function QuoteBuilder() {
     if (isCircle) {
       const d = Math.min(circleMax ?? Infinity, Math.max(w, h));
       setDiameter(d);
-      setDiameterStr(String(d));
     } else {
       setWidth(w);
       setHeight(h);
-      setWidthStr(String(w));
-      setHeightStr(String(h));
     }
-  };
-
-  const parsePositive = (raw: string, fallback: number, min = 0.1) => {
-    const n = parseFloat(raw);
-    if (!Number.isFinite(n) || n <= 0) return fallback;
-    return Math.max(min, n);
-  };
-
-  const commitWidth = (raw: string) => {
-    setWidthStr(raw);
-    if (raw === "" || raw === ".") return;
-    const n = parsePositive(raw, width);
-    setWidth(n);
-  };
-  const commitHeight = (raw: string) => {
-    setHeightStr(raw);
-    if (raw === "" || raw === ".") return;
-    setHeight(parsePositive(raw, height));
-  };
-  const commitDiameter = (raw: string) => {
-    setDiameterStr(raw);
-    if (raw === "" || raw === ".") return;
-    const n = Math.min(circleMax ?? Infinity, parsePositive(raw, diameter));
-    setDiameter(n);
-  };
-  const commitThickness = (raw: string) => {
-    setThicknessStr(raw);
-    if (raw === "" || raw === ".") return;
-    const n = parsePositive(raw, thicknessIn, 0.25);
-    setThicknessIn(n);
   };
 
   const refreshSiteMockup = () => {
@@ -1095,7 +1128,7 @@ export default function QuoteBuilder() {
                 <p className={stepCls}>3 · Size</p>
                 <h2 className="font-display text-lg font-bold">How big is the sign?</h2>
                 <p className="text-[11px] text-fog mt-0.5">
-                  Tap a common size, or type exact feet. {circleMax ? `Circle max ${circleMax} ft.` : "Thickness is usually left at default."}
+                  Tap a common size, or type it in ft, inch, cm or mm — the price always runs on sqft. {circleMax ? `Circle max ${circleMax} ft.` : ""}
                 </p>
               </div>
 
@@ -1108,7 +1141,7 @@ export default function QuoteBuilder() {
                         <button
                           key={d}
                           type="button"
-                          onClick={() => { setDiameter(d); setDiameterStr(String(d)); }}
+                          onClick={() => setDiameter(d)}
                           className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
                             diameter === d ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"
                           }`}
@@ -1131,65 +1164,23 @@ export default function QuoteBuilder() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {isCircle ? (
-                  <div className="col-span-2">
-                    <label className={labelCls}>Diameter (ft){circleMax ? ` · max ${circleMax}` : ""}</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={diameterStr}
-                      onChange={(e) => commitDiameter(e.target.value.replace(/[^0-9.]/g, ""))}
-                      onBlur={() => {
-                        const n = Math.min(circleMax ?? Infinity, parsePositive(diameterStr, diameter));
-                        setDiameter(n);
-                        setDiameterStr(String(n));
-                      }}
-                      placeholder="0"
-                      className={inputCls}
-                    />
-                  </div>
+                  <UnitField label="Diameter" hint={circleMax ? `max ${fmtLen(circleMax, dimUnit)}` : undefined} value={diameter} unit={dimUnit} onUnit={setDimUnit}
+                    fromBase={fromFt} toBase={toFt} onChange={setDiameter} minBase={0.1} maxBase={circleMax} inputCls={inputCls} labelCls={labelCls} />
                 ) : (
                   <>
-                    <div>
-                      <label className={labelCls}>Width (ft)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={widthStr}
-                        onChange={(e) => commitWidth(e.target.value.replace(/[^0-9.]/g, ""))}
-                        onBlur={() => { const n = parsePositive(widthStr, width); setWidth(n); setWidthStr(String(n)); }}
-                        placeholder="0"
-                        className={inputCls}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Height (ft)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={heightStr}
-                        onChange={(e) => commitHeight(e.target.value.replace(/[^0-9.]/g, ""))}
-                        onBlur={() => { const n = parsePositive(heightStr, height); setHeight(n); setHeightStr(String(n)); }}
-                        placeholder="0"
-                        className={inputCls}
-                      />
-                    </div>
+                    <UnitField label="Width" value={width} unit={dimUnit} onUnit={setDimUnit} fromBase={fromFt} toBase={toFt} onChange={setWidth} minBase={0.1} inputCls={inputCls} labelCls={labelCls} />
+                    <UnitField label="Height" value={height} unit={dimUnit} onUnit={setDimUnit} fromBase={fromFt} toBase={toFt} onChange={setHeight} minBase={0.1} inputCls={inputCls} labelCls={labelCls} />
                   </>
                 )}
-                <div>
-                  <label className={labelCls}>Depth (in)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={thicknessStr}
-                    onChange={(e) => commitThickness(e.target.value.replace(/[^0-9.]/g, ""))}
-                    onBlur={() => { const n = parsePositive(thicknessStr, thicknessIn, 0.25); setThicknessIn(n); setThicknessStr(String(n)); }}
-                    placeholder="0"
-                    className={inputCls}
-                  />
-                </div>
+                <UnitField label="Depth" value={thicknessIn} unit={depthUnit} onUnit={setDepthUnit} fromBase={fromIn} toBase={toIn} onChange={setThicknessIn} minBase={0.04} inputCls={inputCls} labelCls={labelCls} />
               </div>
+              <p className="text-[11px] text-fog rounded-lg border border-line bg-ink/30 px-3 py-2">
+                {isCircle ? `Ø ${trimNum(diameter)} ft` : `${trimNum(width)} × ${trimNum(height)} ft`}
+                {" = "}<strong className="text-white">{areaSqft.toFixed(2)} sqft</strong>
+                {dimUnit !== "ft" && <> · typed as {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(width, dimUnit)} × ${fmtLen(height, dimUnit)}`}</>}
+              </p>
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
                   <span className="text-fog block">Area</span>
@@ -1197,7 +1188,7 @@ export default function QuoteBuilder() {
                 </div>
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
                   <span className="text-fog block">Depth</span>
-                  <strong>{thicknessIn}&quot;</strong>
+                  <strong>{fmtLen(thicknessIn / 12, depthUnit)}</strong>
                 </div>
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
                   <span className="text-fog block">How many?</span>
@@ -1253,6 +1244,46 @@ export default function QuoteBuilder() {
                   Leftover sheet cannot be reused (bill the full sheet)
                 </label>
               )}
+              {isBoltPanel && (
+                <div className="rounded-xl border border-gold/40 bg-ink/30 p-3 space-y-3">
+                  <p className={labelCls}>Acrylic panel · advertising bolts</p>
+                  <div>
+                    <label className={labelCls}>Panel</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {PANEL_TINTS.map((t) => (
+                        <button key={t.id} type="button" onClick={() => setPanelTint(t.id)} className={`rounded-xl border px-2 py-2 text-sm font-semibold ${panelTint === t.id ? "border-gold bg-gold text-ink" : "border-line text-fog hover:border-gold"}`}>{t.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Bolt finish</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {BOLT_FINISHES.map((f) => (
+                        <button key={f.id} type="button" onClick={() => setBoltFinish(f.id)} className={`rounded-xl border px-2 py-2 text-sm font-semibold flex items-center justify-center gap-1.5 ${boltFinish === f.id ? "border-gold bg-gold text-ink" : "border-line text-fog hover:border-gold"}`}>
+                          <span className="w-3 h-3 rounded-full border border-black/30" style={{ backgroundColor: f.color }} />{f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Bolts</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([4, 6] as const).map((n) => (
+                          <button key={n} type="button" onClick={() => setBoltCount(n)} className={`rounded-xl border px-2 py-2 text-sm font-semibold ${boltCount === n ? "border-gold bg-gold text-ink" : "border-line text-fog hover:border-gold"}`}>{n} pcs</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Standoff (gap to wall)</label>
+                      <select className={inputCls} value={standoffMm} onChange={(e) => setStandoffMm(+e.target.value)}>
+                        {STANDOFF_OPTIONS_MM.map((mm) => <option key={mm} value={mm}>{mm} mm</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-fog">Printed with {printingLabel || "sticker / UV print"} on a {panelMm} mm acrylic panel, wall-mounted on advertising bolts. Bolts are covered by the per-sqft rate; mounting is set to wall automatically.</p>
+                </div>
+              )}
               {lettersOn && (
                 <div className="rounded-xl border border-gold/40 bg-ink/30 p-3 space-y-3">
                   <p className={labelCls}>Live letters · type the client&apos;s text</p>
@@ -1262,11 +1293,17 @@ export default function QuoteBuilder() {
                       <select className={inputCls} value={letterFont} onChange={(e) => setLetterFont(e.target.value)}>
                         {LETTER_FONTS.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select></div>
-                    <div><label className={labelCls}>Letter height (in)</label><input type="number" min={1} className={inputCls} value={letterHeightIn} onChange={(e) => setLetterHeightIn(Math.max(1, +e.target.value || 1))} /></div>
-                    {isLetters && !flatCut && <div><label className={labelCls}>Return depth (in)</label><input type="number" min={0.5} step={0.5} className={inputCls} value={letterDepthIn} onChange={(e) => setLetterDepthIn(Math.max(0.5, +e.target.value || 0.5))} /></div>}
+                    <UnitField label="Letter height" value={letterHeightIn} unit={letterUnit} onUnit={setLetterUnit} fromBase={fromIn} toBase={toIn} onChange={setLetterHeightIn} minBase={1} inputCls={inputCls} labelCls={labelCls} />
+                    {isLetters && !flatCut && <UnitField label="Return depth" value={letterDepthIn} unit={depthUnit} onUnit={setDepthUnit} fromBase={fromIn} toBase={toIn} onChange={setLetterDepthIn} minBase={0.5} inputCls={inputCls} labelCls={labelCls} />}
                     {isNeonText && <div><label className={labelCls}>Backing</label>
                       <select className={inputCls} value={neonBacking} onChange={(e) => setNeonBacking(e.target.value as "clear" | "black")}><option value="clear">Clear acrylic</option><option value="black">Black acrylic</option></select></div>}
                   </div>
+                  {isLetters && (
+                    <div className="space-y-3">
+                      <ColorRow label="Letter face color" hint="White by default — tap any color or use + for a custom one." value={bodyColor} onChange={setBodyColor} />
+                      <ColorRow label="Siding (returns) color" hint="The sides / depth of each letter." value={returnColor} onChange={setReturnColor} />
+                    </div>
+                  )}
                   {activePreset?.id === "ac-letters-lit" && (
                     <div className="grid grid-cols-2 gap-2">
                       {(["halo", "front"] as const).map((g) => (
@@ -1373,45 +1410,13 @@ export default function QuoteBuilder() {
                 )}
               </div>
 
-              {/* Box + depth colors */}
-              <div>
-                <label className={labelCls}>Box / face color</label>
-                <p className="text-[11px] text-fog mb-2">Front of the sign (what people see).</p>
-                <div className="flex flex-wrap gap-2">
-                  {BOX_COLORS.map((c) => (
-                    <button
-                      key={`body-${c.id}`}
-                      type="button"
-                      title={c.label}
-                      onClick={() => setBodyColor(c.hex)}
-                      className={`w-9 h-9 rounded-full border-2 transition ${
-                        bodyColor.toLowerCase() === c.hex.toLowerCase() ? "border-gold ring-2 ring-gold/40 scale-110" : "border-white/30 hover:border-white/60"
-                      }`}
-                      style={{ backgroundColor: c.hex }}
-                    />
-                  ))}
-                </div>
-                <p className="text-[10px] text-fog mt-1">{BOX_COLORS.find((c) => c.hex.toLowerCase() === bodyColor.toLowerCase())?.label || bodyColor}</p>
-              </div>
-              <div>
-                <label className={labelCls}>Depth / returns color</label>
-                <p className="text-[11px] text-fog mb-2">Sides of the box (clients often want black or white depth).</p>
-                <div className="flex flex-wrap gap-2">
-                  {BOX_COLORS.map((c) => (
-                    <button
-                      key={`ret-${c.id}`}
-                      type="button"
-                      title={c.label}
-                      onClick={() => setReturnColor(c.hex)}
-                      className={`w-9 h-9 rounded-full border-2 transition ${
-                        returnColor.toLowerCase() === c.hex.toLowerCase() ? "border-gold ring-2 ring-gold/40 scale-110" : "border-white/30 hover:border-white/60"
-                      }`}
-                      style={{ backgroundColor: c.hex }}
-                    />
-                  ))}
-                </div>
-                <p className="text-[10px] text-fog mt-1">{BOX_COLORS.find((c) => c.hex.toLowerCase() === returnColor.toLowerCase())?.label || returnColor}</p>
-              </div>
+              {/* Box + depth colors (letters and bolt panels have their own pickers in Build) */}
+              {!isLetters && !isBoltPanel && (
+                <>
+                  <ColorRow label="Box / face color" hint="Front of the sign (what people see)." value={bodyColor} onChange={setBodyColor} />
+                  <ColorRow label="Depth / returns color" hint="Sides of the box (clients often want black or white depth)." value={returnColor} onChange={setReturnColor} />
+                </>
+              )}
 
               <div className="flex justify-between pt-1 gap-2">
                 <button type="button" onClick={() => setBuildStep(3)} className="rounded-full border border-line px-4 py-2 text-sm text-fog hover:text-white">← Back</button>
@@ -1455,7 +1460,24 @@ export default function QuoteBuilder() {
                 <p className={stepCls}>6 · Add to quote</p>
                 <h2 className="font-display text-lg font-bold">Ready? Add this sign</h2>
               </div>
-              <textarea className={`${inputCls} min-h-16`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the client (e.g. includes install, rush job…)" />
+              <div>
+                <label className={labelCls}>Delivery type (whole quote)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([["normal", "Normal", "Standard lead time"], ["rush", `Rush (+${rushPct}%)`, "Priority production"], ["shipping", "Shipping", "Shipping rate applies"]] as const).map(([id, name, sub]) => (
+                    <button key={id} type="button" onClick={() => setDeliveryType(id)} className={`rounded-xl border px-3 py-2.5 text-left transition ${deliveryType === id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                      <span className="block text-sm font-semibold">{name}</span>
+                      <span className="block text-[11px] opacity-80">{sub}</span>
+                    </button>
+                  ))}
+                </div>
+                {deliveryType === "shipping" && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-fog">Shipping ₱</span>
+                    <input type="number" min={0} value={shippingFee || ""} placeholder="Leave empty until the courier rate is known" onChange={(e) => setShippingFee(+e.target.value || 0)} className={inputCls} />
+                  </div>
+                )}
+              </div>
+              <textarea className={`${inputCls} min-h-16`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the client (e.g. includes install…)" />
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="text-xs text-fog">
                   <span className="block">{areaSqft.toFixed(2)} sqft · qty {qty}</span>
@@ -1484,7 +1506,7 @@ export default function QuoteBuilder() {
                   <p className="text-sm font-semibold">Updates as you build</p>
                 </div>
                 <span className="text-xs text-fog">
-                  {isCircle ? `Ø ${ft(diameter)}'` : `${ft(height)}' H × ${ft(width)}' W`} · {thicknessIn}&quot; T
+                  {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(height, dimUnit)} H × ${fmtLen(width, dimUnit)} W`} · {fmtLen(thicknessIn / 12, depthUnit)} T
                 </span>
               </div>
               <div className="h-[min(62vh,560px)] min-h-[420px]">
@@ -1500,12 +1522,15 @@ export default function QuoteBuilder() {
                   preview={isLightbox ? "lightbox" : "panaflex"}
                   traits={traits}
                   letters={lettersSpec}
+                  bolts={boltSpec}
+                  unit={dimUnit}
+                  depthUnit={depthUnit}
                   text="Your Logo"
                   logoUrl={activeLogo}
                   showDimensions
                   faceLabel={faceLabel}
                   sidesLabel={sidesLabel}
-                  mountLabel={mountingText}
+                  mountLabel={mountingShown}
                   brackets={bracketCount}
                   printingLabel={printingLabel || undefined}
                 />
@@ -1687,7 +1712,9 @@ export default function QuoteBuilder() {
               </p>
             ) : (
               lines.map((l, idx) => {
-                const size = l.shape === "circle" ? `Ø ${ft(l.diameter)} ft` : `${ft(l.width)} × ${ft(l.height)} ft`;
+                const lu = l.unit ?? "ft";
+                const sizeFt = l.shape === "circle" ? `Ø ${ft(l.diameter)} ft` : `${ft(l.width)} × ${ft(l.height)} ft`;
+                const size = lu === "ft" ? sizeFt : `${l.shape === "circle" ? `Ø ${fmtLen(l.diameter, lu)}` : `${fmtLen(l.width, lu)} × ${fmtLen(l.height, lu)}`} (${sizeFt})`;
                 return (
                   <div key={l.id} className="rounded-xl border border-gray-300 overflow-hidden">
                     <div className="flex items-center justify-between gap-2 bg-[#f0f4f8] px-3 py-2 border-b border-gray-300">
@@ -1730,7 +1757,7 @@ export default function QuoteBuilder() {
                         <div className="p-2.5 text-[11px] leading-snug grow">
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5">
                             <div><span className="text-gray-500 text-[9px] uppercase">Size</span><br /><strong>{size}</strong></div>
-                            <div><span className="text-gray-500 text-[9px] uppercase">Depth</span><br /><strong>{l.thicknessIn}&quot;</strong></div>
+                            <div><span className="text-gray-500 text-[9px] uppercase">Depth</span><br /><strong>{fmtLen(l.thicknessIn / 12, l.depthUnit ?? "in")}</strong></div>
                             <div><span className="text-gray-500 text-[9px] uppercase">Area</span><br /><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
                             <div><span className="text-gray-500 text-[9px] uppercase">Qty</span><br /><strong>{l.qty}</strong></div>
                             <div className="col-span-2"><span className="text-gray-500 text-[9px] uppercase">Material</span><br /><strong>{l.face}</strong></div>
@@ -1834,15 +1861,26 @@ export default function QuoteBuilder() {
               <div className="mt-1 space-y-0.5 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span className="font-medium">₱{fmt(subtotal)}</span></div>
                 {discount > 0 && <div className="flex justify-between"><span className="text-gray-500">Discount</span><span>−₱{fmt(discount)}</span></div>}
+                {rush > 0 && <div className="flex justify-between"><span className="text-gray-500">Rush order (+{rushPct}%)</span><span>₱{fmt(rush)}</span></div>}
+                {deliveryType === "shipping" && <div className="flex justify-between"><span className="text-gray-500">Shipping</span><span>{shipping > 0 ? `₱${fmt(shipping)}` : "Rate to be advised"}</span></div>}
                 {mobil > 0 && <div className="flex justify-between"><span className="text-gray-500">Mobilization (travel)</span><span>₱{fmt(mobil)}</span></div>}
-                <div className="flex justify-between"><span className="text-gray-500">VAT ({qs.vatPct}%)</span><span>₱{fmt(vat)}</span></div>
                 <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1 mt-1">
                   <span>Total</span><span className="text-[#011424]">₱{fmt(grand)}</span>
                 </div>
+                <p className="text-[10px] text-gray-500 text-right">VAT not included · added on the Official Receipt</p>
               </div>
               <div className="no-export mt-1.5 flex items-center gap-1.5">
                 <span className="text-gray-500 text-[10px]">Discount ₱</span>
                 <input type="number" min={0} value={discount} onChange={(e) => setDiscount(+e.target.value || 0)} className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-right text-xs" />
+              </div>
+              <div className="no-export mt-1.5 flex items-center gap-1.5">
+                <span className="text-gray-500 text-[10px]">Delivery</span>
+                <select value={deliveryType} onChange={(e) => setDeliveryType(e.target.value as "normal" | "rush" | "shipping")} className="border border-gray-200 rounded-lg px-2 py-1 text-xs">
+                  <option value="normal">Normal</option>
+                  <option value="rush">Rush (+{rushPct}%)</option>
+                  <option value="shipping">Shipping</option>
+                </select>
+                {deliveryType === "shipping" && <input type="number" min={0} value={shippingFee || ""} placeholder="₱" onChange={(e) => setShippingFee(+e.target.value || 0)} className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-right text-xs" />}
               </div>
               <div className="no-export mt-1.5 flex items-center gap-1.5">
                 <span className="text-gray-500 text-[10px]">Mobilization ₱</span>

@@ -2,11 +2,13 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, RoundedBox, Line, Text, useTexture } from "@react-three/drei";
-import { Suspense, useEffect, forwardRef, useImperativeHandle, useRef, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, forwardRef, useImperativeHandle, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import type { Traits } from "@/lib/traits";
 import type { PreviewKind } from "@/lib/catalog";
 import LettersMesh, { type LettersSpec } from "@/components/LettersMesh";
+import { fmtLen, type LenUnit } from "@/lib/units";
+import { BOLT_FINISHES, PANEL_TINTS, type BoltSpec } from "@/lib/bolts";
 
 export type SignShape = "rect" | "circle";
 /** panaflex = flat face · builtup = metal-return lightbox · acrylic = acrylic-build lightbox */
@@ -50,12 +52,13 @@ interface SignSceneProps {
   below?: number;
   /** Live 3D letters / LED neon text (replaces the box) */
   letters?: LettersSpec;
+  /** Acrylic panel on advertising bolts (replaces the box) */
+  bolts?: BoltSpec;
+  /** Units used for the dimension labels (what the sales person typed) */
+  unit?: LenUnit;
+  depthUnit?: LenUnit;
 }
 
-function fmtFt(n: number) {
-  const r = Math.round(n * 100) / 100;
-  return `${r}'`;
-}
 
 /** Keeps children turned toward the camera (live + during manual captures via userData.faceCam). */
 function FaceCam({ position, children }: { position: [number, number, number]; children: ReactNode }) {
@@ -427,7 +430,7 @@ function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outlin
   );
 }
 
-function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets }: SignSceneProps) {
+function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit }: SignSceneProps) {
   const w = Math.max(0.5, widthFt);
   const h = Math.max(0.3, heightFt);
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -495,16 +498,16 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
       {showDimensions && (
         <group>
           {/* One label per axis — cleaner, easier to read */}
-          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -dimOff, 0.06]} label={`W ${fmtFt(w)}`} color="#111" fontSize={dimFont} />
-          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-dimOff, 0, 0.06]} label={`H ${fmtFt(h)}`} color="#111" fontSize={dimFont} />
-          <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#111" fontSize={dimFont * 0.92} />
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[0, -dimOff, 0.06]} label={`W ${fmtLen(w, unit)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[-w / 2, -h / 2, depth / 2]} end={[-w / 2, h / 2, depth / 2]} offset={[-dimOff, 0, 0.06]} label={`H ${fmtLen(h, unit)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[w / 2, -h / 2, -depth / 2]} end={[w / 2, -h / 2, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${fmtLen(depth, depthUnit ?? "in")}`} color="#111" fontSize={dimFont * 0.92} />
         </group>
       )}
     </group>
   );
 }
 
-function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets }: SignSceneProps) {
+function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit }: SignSceneProps) {
   const d = Math.max(0.5, widthFt);
   const r = d / 2;
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -591,8 +594,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
 
       {showDimensions && (
         <group>
-          <DimLine start={[-r, -r, depth / 2]} end={[r, -r, depth / 2]} offset={[0, -dimOff, 0.06]} label={`Ø ${fmtFt(d)}`} color="#111" fontSize={dimFont} />
-          <DimLine start={[r, -r, -depth / 2]} end={[r, -r, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${Math.round(depth * 12 * 10) / 10}"`} color="#111" fontSize={dimFont * 0.92} />
+          <DimLine start={[-r, -r, depth / 2]} end={[r, -r, depth / 2]} offset={[0, -dimOff, 0.06]} label={`Ø ${fmtLen(d, unit)}`} color="#111" fontSize={dimFont} />
+          <DimLine start={[r, -r, -depth / 2]} end={[r, -r, depth / 2]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${fmtLen(depth, depthUnit ?? "in")}`} color="#111" fontSize={dimFont * 0.92} />
         </group>
       )}
     </group>
@@ -664,6 +667,88 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
 }
 
 
+/** Acrylic panel held off the wall by advertising bolts (standoffs) — flat cut, printed with sticker / UV. */
+function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, showDimensions = true, unit, depthUnit }: SignSceneProps & { bolts: BoltSpec }) {
+  const circle = shape === "circle";
+  const w = Math.max(0.5, widthFt);
+  const h = circle ? w : Math.max(0.3, heightFt);
+  const pt = bolts.panelMm / 304.8;
+  const so = bolts.standoffMm / 304.8;
+  const r = bolts.diaMm / 304.8 / 2;
+  const capT = 0.011;
+  const tint = PANEL_TINTS.find((t) => t.id === bolts.tint) ?? PANEL_TINTS[0];
+  const fin = BOLT_FINISHES.find((f) => f.id === bolts.finish) ?? BOLT_FINISHES[0];
+  const dimOff = Math.max(0.28, Math.min(w, h) * 0.1);
+  const dimFont = Math.max(0.12, Math.min(0.22, Math.min(w, h) * 0.055));
+  const inset = Math.max(r * 2.2, Math.min(0.14, Math.min(w, h) * 0.12));
+  const total = pt + so + capT;
+
+  const points: [number, number][] = [];
+  if (circle) {
+    const n = bolts.count, off = n === 4 ? Math.PI / 4 : Math.PI / 6, rr = w / 2 - inset;
+    for (let i = 0; i < n; i++) points.push([Math.cos(off + (i * 2 * Math.PI) / n) * rr, Math.sin(off + (i * 2 * Math.PI) / n) * rr]);
+  } else {
+    const x = w / 2 - inset, y = h / 2 - inset;
+    points.push([-x, y], [x, y], [-x, -y], [x, -y]);
+    if (bolts.count === 6) points.push([0, y], [0, -y]);
+  }
+
+  const panelGeo = useMemo(() => (circle ? new THREE.CylinderGeometry(w / 2, w / 2, pt, 64) : new THREE.BoxGeometry(w, h, pt)), [circle, w, h, pt]);
+  const edgeGeo = useMemo(() => new THREE.EdgesGeometry(panelGeo, 25), [panelGeo]);
+  const wallW = Math.max(w, 2) * 4, wallH = Math.max(h, 2) * 4;
+  const art = Math.max(0.2, Math.min(w, h) - inset * 3);
+
+  return (
+    <group>
+      {/* wall */}
+      <mesh position={[0, 0, -pt / 2 - so - 0.12]}>
+        <boxGeometry args={[wallW, wallH, 0.24]} />
+        <meshStandardMaterial color="#e8eaed" roughness={0.92} />
+      </mesh>
+
+      {/* acrylic panel */}
+      <mesh geometry={panelGeo} rotation={circle ? [Math.PI / 2, 0, 0] : [0, 0, 0]} castShadow>
+        <meshStandardMaterial color={tint.color} transparent={tint.opacity < 1} opacity={tint.opacity} roughness={0.08} metalness={0} depthWrite={tint.opacity >= 1} />
+      </mesh>
+      <lineSegments geometry={edgeGeo} rotation={circle ? [Math.PI / 2, 0, 0] : [0, 0, 0]}>
+        <lineBasicMaterial color={tint.edge} />
+      </lineSegments>
+
+      {/* printed artwork (sticker / UV) */}
+      <Artwork w={circle ? art : w - inset * 3} h={circle ? art : h - inset * 3} depth={pt} logoUrl={logoUrl} circle={circle}
+        fontSize={Math.min(w * 0.14, h * 0.28)} maxWidth={Math.max(0.3, w - inset * 3.2)} color={tint.ink} outline={tint.outline} />
+
+      {/* advertising bolts: barrel behind the panel + round cap on the face */}
+      {points.map(([x, y], i) => (
+        <group key={i} position={[x, y, 0]}>
+          <mesh position={[0, 0, -pt / 2 - so / 2]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[r * 0.82, r * 0.82, so, 20]} />
+            <meshStandardMaterial color={fin.color} metalness={fin.metalness} roughness={fin.roughness} />
+          </mesh>
+          <mesh position={[0, 0, pt / 2 + capT / 2]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[r, r, capT, 24]} />
+            <meshStandardMaterial color={fin.color} metalness={fin.metalness} roughness={fin.roughness} />
+          </mesh>
+        </group>
+      ))}
+
+      {showDimensions && (
+        <group>
+          {circle ? (
+            <DimLine start={[-w / 2, -h / 2, pt / 2]} end={[w / 2, -h / 2, pt / 2]} offset={[0, -dimOff, 0.06]} label={`Ø ${fmtLen(w, unit)}`} color="#111" fontSize={dimFont} />
+          ) : (
+            <>
+              <DimLine start={[-w / 2, -h / 2, pt / 2]} end={[w / 2, -h / 2, pt / 2]} offset={[0, -dimOff, 0.06]} label={`W ${fmtLen(w, unit)}`} color="#111" fontSize={dimFont} />
+              <DimLine start={[-w / 2, -h / 2, pt / 2]} end={[-w / 2, h / 2, pt / 2]} offset={[-dimOff, 0, 0.06]} label={`H ${fmtLen(h, unit)}`} color="#111" fontSize={dimFont} />
+            </>
+          )}
+          <DimLine start={[w / 2, -h / 2, -pt / 2 - so]} end={[w / 2, -h / 2, pt / 2 + capT]} offset={[dimOff * 0.5, -dimOff * 0.35, 0]} label={`T ${fmtLen(total, depthUnit ?? "in")}`} color="#111" fontSize={dimFont * 0.92} />
+        </group>
+      )}
+    </group>
+  );
+}
+
 const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene(props, ref) {
   const { widthFt, heightFt, shape = "rect" } = props;
   const hh = shape === "circle" ? widthFt : heightFt;
@@ -682,9 +767,9 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
     captureIsoClear: () => apiRef.current?.captureIsoClear() ?? null,
   }));
 
-  const thickness = Math.round((props.traits.frameThickness || 0.12) * 12 * 10) / 10;
+  const thicknessLabel = fmtLen(props.bolts ? (props.bolts.panelMm + props.bolts.standoffMm) / 304.8 : (props.traits.frameThickness || 0.12), props.depthUnit ?? "in");
   const withLight = props.lit ?? props.traits.light !== "none";
-  const dimLabel = shape === "circle" ? `Ø ${fmtFt(widthFt)}` : null;
+  const dimLabel = shape === "circle" ? `Ø ${fmtLen(widthFt, props.unit)}` : null;
   const chip = "rounded-full bg-white border border-gray-300 px-2.5 py-1 text-[11px] font-bold text-black shadow-sm";
 
   return (
@@ -709,12 +794,12 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
             <LettersMesh spec={props.letters} widthFt={widthFt} heightFt={heightFt}>
               {props.showDimensions !== false && (
                 <>
-                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[widthFt / 2, -heightFt / 2, 0]} offset={[0, -Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0.06]} label={`W ${fmtFt(widthFt)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
-                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[-widthFt / 2, heightFt / 2, 0]} offset={[-Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0, 0.06]} label={`H ${fmtFt(heightFt)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
+                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[widthFt / 2, -heightFt / 2, 0]} offset={[0, -Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0.06]} label={`W ${fmtLen(widthFt, props.unit)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
+                  <DimLine start={[-widthFt / 2, -heightFt / 2, 0]} end={[-widthFt / 2, heightFt / 2, 0]} offset={[-Math.max(0.28, Math.min(widthFt, heightFt) * 0.1), 0, 0.06]} label={`H ${fmtLen(heightFt, props.unit)}`} color="#111" fontSize={Math.max(0.12, Math.min(0.22, Math.min(widthFt, heightFt) * 0.055))} />
                 </>
               )}
             </LettersMesh>
-          ) : shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
+          ) : props.bolts ? <BoltPanelMesh {...props} bolts={props.bolts} /> : shape === "circle" ? <DiscMesh {...props} below={below} /> : <PanaflexMesh {...props} below={below} />}
         </Suspense>
         <CaptureController camDist={camDist} onReady={(api) => { apiRef.current = api; }} />
         <OrbitControls makeDefault minDistance={1.5} maxDistance={80} target={[0, 0, 0]} enablePan={false} />
@@ -740,12 +825,12 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
             <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">{dimLabel}</span>
           ) : (
             <>
-              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">W {fmtFt(widthFt)}</span>
-              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">H {fmtFt(heightFt)}</span>
+              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">W {fmtLen(widthFt, props.unit)}</span>
+              <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">H {fmtLen(heightFt, props.unit)}</span>
             </>
           )}
           <span className="rounded-md bg-white/95 border border-gray-400 px-2 py-0.5 text-[10px] font-semibold text-black shadow-sm">
-            T {thickness}&quot;
+            T {thicknessLabel}
           </span>
         </div>
       )}

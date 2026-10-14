@@ -25,7 +25,7 @@ export default function LettersMesh({ spec, widthFt, heightFt, children }: { spe
   const dl = depthFt / s, fl = Math.min(faceFt, depthFt) / s;
 
   const built = useMemo(() => {
-    const returns: THREE.BufferGeometry[] = [], faces: THREE.BufferGeometry[] = [], halos: THREE.BufferGeometry[] = [];
+    const returns: THREE.BufferGeometry[] = [], faces: THREE.BufferGeometry[] = [], halos: THREE.BufferGeometry[] = [], edges: THREE.BufferGeometry[] = [];
     const tubes: { geo: THREE.BufferGeometry; color: string }[] = [];
     let idx = 0;
     for (const c of layout.chars) {
@@ -44,10 +44,12 @@ export default function LettersMesh({ spec, widthFt, heightFt, children }: { spe
       }
       const ret = dl - fl;
       if (ret > 1e-6) returns.push(new THREE.ExtrudeGeometry(c.shapes, { depth: ret, bevelEnabled: false, curveSegments: 6 }).translate(c.x, c.y, 0));
-      faces.push(new THREE.ExtrudeGeometry(c.shapes, { depth: fl, bevelEnabled: false, curveSegments: 6 }).translate(c.x, c.y, dl - fl));
+      const faceGeo = new THREE.ExtrudeGeometry(c.shapes, { depth: fl, bevelEnabled: false, curveSegments: 6 }).translate(c.x, c.y, dl - fl);
+      faces.push(faceGeo);
+      edges.push(new THREE.EdgesGeometry(faceGeo, 35));
       if (spec.glow === "halo") halos.push(new THREE.ExtrudeGeometry(c.shapes, { depth: 0.001, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.07, bevelSegments: 2, curveSegments: 6 }).translate(c.x, c.y, -0.03 / s));
     }
-    return { returns, faces, halos, tubes };
+    return { returns, faces, halos, tubes, edges };
   }, [layout, neon, dl, fl, s, spec.glow, spec.neonColors]);
 
   const box: [number, number, number][] = [[-widthFt / 2, -heightFt / 2, 0], [widthFt / 2, -heightFt / 2, 0], [widthFt / 2, heightFt / 2, 0], [-widthFt / 2, heightFt / 2, 0], [-widthFt / 2, -heightFt / 2, 0]];
@@ -65,6 +67,8 @@ export default function LettersMesh({ spec, widthFt, heightFt, children }: { spe
       <group position={[-cx * s, -cy * s, neon ? 0.02 : -depthFt / 2]} scale={s}>
         {built.returns.map((g, i) => <mesh key={`r${i}`} geometry={g}><meshStandardMaterial color={spec.returnColor} roughness={0.35} /></mesh>)}
         {built.faces.map((g, i) => <mesh key={`f${i}`} geometry={g}><meshStandardMaterial color={spec.faceColor} roughness={0.15} emissive={front ? spec.faceColor : "#000000"} emissiveIntensity={front ? 0.9 : 0} /></mesh>)}
+        {/* thin rim around the face, in the siding colour — like the reference render */}
+        {built.edges.map((g, i) => <lineSegments key={`e${i}`} geometry={g}><lineBasicMaterial color={spec.returnColor} /></lineSegments>)}
         {built.halos.map((g, i) => <mesh key={`h${i}`} geometry={g}><meshBasicMaterial color="#ffd27a" transparent opacity={0.45} depthWrite={false} /></mesh>)}
         {built.tubes.map((t, i) => <mesh key={`t${i}`} geometry={t.geo}><meshStandardMaterial color={t.color} emissive={t.color} emissiveIntensity={1.6} toneMapped={false} /></mesh>)}
       </group>
