@@ -154,9 +154,18 @@ export async function fetchLandingSettings(): Promise<LandingSettings> {
 }
 
 export interface LightRate { without: number; with: number }
+/** General materials (acrylic has its own table). */
 export const MATERIAL_RATES: [string, string][] = [
-  ["panaflex", "Panaflex"], ["acrylic", "Acrylic"], ["neon", "Neon LED"], ["apc", "APC"],
+  ["panaflex", "Panaflex"], ["neon", "Neon LED"], ["apc", "APC"],
   ["tarp", "Tarp"], ["sticker", "Sticker"], ["metal", "Metal Sheet"], ["custom", "Custom"],
+];
+/** Acrylic builds · ₱/sqft — separate from material rates. Keys map to Options → Build presets. */
+export const ACRYLIC_RATES: [string, string][] = [
+  ["flat", "Acrylic flat panel (bolts / print)"],
+  ["letters-flat", "Acrylic flat-cut letters"],
+  ["letters", "Acrylic build-up letters"],
+  ["letters-lit", "Acrylic build-up letters · LED"],
+  ["box", "Acrylic box / diffuser body"],
 ];
 export const LIGHTBOX_RATES: [string, string][] = [["builtup", "Lightbox · Built-up"], ["acrylic", "Lightbox · Acrylic build"]];
 export const PRINTING_RATES: [string, string][] = [["direct", "Direct to materials"], ["sticker", "Sticker print"], ["cutout", "Sticker Cut Out"], ["uv", "UV Print"]];
@@ -164,10 +173,13 @@ export const PRINTING_RATES: [string, string][] = [["direct", "Direct to materia
 export interface PricingSettings {
   constructionPerSqft: number;
   materials: Record<string, LightRate>;
+  /** Acrylic-only rates by build type */
+  acrylic: Record<string, LightRate>;
   lightbox: Record<string, LightRate>;
   printing: Record<string, number>;
   minimumCharge: number;
   lightboxMinimumCharge: number;
+  acrylicMinimumCharge?: number;
 }
 export interface QuoteSettings {
   markupPct: number;
@@ -179,18 +191,24 @@ export interface QuoteSettings {
   presetSettings: PresetSettings;
 }
 const zeroRate = (): LightRate => ({ without: 0, with: 0 });
-/** Default ₱/sqft (without light / with light) — same table as Builder Settings → Material rates. */
+/** Default ₱/sqft (without light / with light) — Material rates + separate Acrylic table. */
 export const DEFAULT_PRICING: PricingSettings = {
   constructionPerSqft: 0,
   materials: {
     panaflex: { without: 650, with: 750 },
-    acrylic: { without: 2000, with: 850 },
     neon: { without: 860, with: 950 },
     apc: { without: 0, with: 0 },
     tarp: { without: 650, with: 750 },
     sticker: { without: 0, with: 0 },
     metal: { without: 0, with: 0 },
     custom: { without: 0, with: 0 },
+  },
+  acrylic: {
+    flat: { without: 2000, with: 850 },
+    "letters-flat": { without: 2000, with: 1200 },
+    letters: { without: 2500, with: 1800 },
+    "letters-lit": { without: 2800, with: 2200 },
+    box: { without: 2200, with: 1800 },
   },
   lightbox: {
     builtup: { without: 1900, with: 2000 },
@@ -199,6 +217,7 @@ export const DEFAULT_PRICING: PricingSettings = {
   printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, 0])),
   minimumCharge: 0,
   lightboxMinimumCharge: 0,
+  acrylicMinimumCharge: 0,
 };
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   // Material rates are sell ₱/sqft as-is; set markup > 0 only if you want an extra % on top
@@ -212,13 +231,23 @@ function mergeRate(raw: unknown, fallback: LightRate): LightRate { const r = obj
 function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
   const d = DEFAULT_PRICING; const np = obj(rawQuote.pricing);
   if (Object.keys(np).length > 0) {
-    const mats = obj(np.materials), lbs = obj(np.lightbox), printing = obj(np.printing);
+    const mats = obj(np.materials), acr = obj(np.acrylic), lbs = obj(np.lightbox), printing = obj(np.printing);
+    // Migrate old materials.acrylic into acrylic.flat if present and no acrylic table yet
+    const legacyAc = mats.acrylic;
     return {
       constructionPerSqft: num(np.constructionPerSqft, d.constructionPerSqft),
       materials: Object.fromEntries(MATERIAL_RATES.map(([id]) => [id, mergeRate(mats[id], d.materials[id])])),
+      acrylic: Object.fromEntries(ACRYLIC_RATES.map(([id]) => {
+        const fallback = d.acrylic[id] ?? zeroRate();
+        if (acr[id]) return [id, mergeRate(acr[id], fallback)];
+        if (id === "flat" && legacyAc) return [id, mergeRate(legacyAc, fallback)];
+        return [id, fallback];
+      })),
       lightbox: Object.fromEntries(LIGHTBOX_RATES.map(([id]) => [id, mergeRate(lbs[id], d.lightbox[id])])),
       printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, num(printing[id], 0)])),
-      minimumCharge: num(np.minimumCharge, d.minimumCharge), lightboxMinimumCharge: num(np.lightboxMinimumCharge, d.lightboxMinimumCharge),
+      minimumCharge: num(np.minimumCharge, d.minimumCharge),
+      lightboxMinimumCharge: num(np.lightboxMinimumCharge, d.lightboxMinimumCharge),
+      acrylicMinimumCharge: num(np.acrylicMinimumCharge, d.acrylicMinimumCharge ?? 0),
     };
   }
   const op = obj(rawQuote.panaflexPricing), olb = obj(rawQuote.lightboxRoundPricing), face = obj(op.face), lighting = obj(op.lighting), printing = obj(op.printing);
@@ -226,9 +255,12 @@ function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
   return {
     constructionPerSqft: num(op.constructionPerSqft, 0),
     materials: Object.fromEntries(MATERIAL_RATES.map(([id]) => { const f = num(face[id], 0); return [id, { without: f + lightWithout, with: f + lightWith }]; })),
+    acrylic: { ...d.acrylic },
     lightbox: { builtup: { without: num(olb.builtUp, 0), with: num(olb.builtUp, 0) }, acrylic: { without: num(olb.acrylic, 0), with: num(olb.acrylic, 0) } },
     printing: Object.fromEntries(PRINTING_RATES.map(([id]) => [id, num(printing[id], 0)])),
-    minimumCharge: num(op.minimumCharge, 0), lightboxMinimumCharge: num(olb.minimumCharge, 0),
+    minimumCharge: num(op.minimumCharge, 0),
+    lightboxMinimumCharge: num(olb.minimumCharge, 0),
+    acrylicMinimumCharge: 0,
   };
 }
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {

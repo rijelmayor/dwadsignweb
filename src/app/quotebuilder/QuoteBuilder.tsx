@@ -395,10 +395,8 @@ export default function QuoteBuilder() {
     ? `Wall · ${boltCount} advertising bolts (${BOLT_FINISHES.find((f) => f.id === boltFinish)?.label.toLowerCase()}, ${standoffMm} mm standoff)`
     : mountingText;
   /**
-   * Live unit price = Material rates (₱/sqft) × area × sides, from Builder Settings.
-   * Only “without light” / “with light” rates matter for the base. Optional printing & construction
-   * add on if set. Markup % and minimum charge from quote settings still apply.
-   * Preset builds (Options) stay for description / 3D only — they no longer override these rates.
+   * Live unit price = ₱/sqft (without / with light) × area × sides.
+   * Acrylic uses its own table (by build); other materials use Material rates.
    */
   const live = useMemo(() => {
     const markup = 1 + qs.markupPct / 100;
@@ -426,7 +424,37 @@ export default function QuoteBuilder() {
       };
     }
 
-    // Material rate per sqft for chosen light option (Panaflex, Acrylic, Neon, …)
+    // Acrylic → dedicated acrylic table by Options → Build preset
+    if (serviceId === "acrylic") {
+      const pid = activePreset?.id ?? "";
+      let acKey = "flat";
+      if (pid === "ac-letters-flat") acKey = "letters-flat";
+      else if (pid === "ac-letters") acKey = "letters";
+      else if (pid === "ac-letters-lit") acKey = "letters-lit";
+      else if (pid === "ac-box-cut" || pid === "ac-box-uv") acKey = "box";
+      else acKey = "flat"; // 3mm / 5mm bolts / default
+      const faceRate = (pr.acrylic?.[acKey]?.[key] ?? pr.acrylic?.flat?.[key] ?? 0) * sidesMult;
+      const rates = { construction: pr.constructionPerSqft || 0, face: faceRate, lighting: 0, printing: printRate };
+      const raw = (rates.construction + rates.face + rates.printing) * areaSqft;
+      const afterMarkup = raw * markup;
+      const minC = pr.acrylicMinimumCharge || pr.minimumCharge || 0;
+      const unitCost = Math.max(minC, afterMarkup);
+      return {
+        rates,
+        raw,
+        unitCost,
+        hasTbd: faceRate <= 0,
+        breakdown: {
+          construction: rates.construction * areaSqft,
+          face: rates.face * areaSqft,
+          lighting: 0,
+          printing: rates.printing * areaSqft,
+          markup: unitCost - raw,
+        } as LineItem["breakdown"],
+      };
+    }
+
+    // Other materials
     const framed = serviceId !== "sticker" && serviceId !== "neon";
     const faceRate = (pr.materials[serviceId]?.[key] ?? 0) * sidesMult;
     const rates = {
@@ -451,7 +479,7 @@ export default function QuoteBuilder() {
         markup: unitCost - raw,
       } as LineItem["breakdown"],
     };
-  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing]);
+  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing, activePreset]);
 
   const pickShape = (next: Shape) => {
     setShape(next);

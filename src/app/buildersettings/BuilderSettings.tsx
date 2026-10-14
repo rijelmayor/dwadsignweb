@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import {
+  ACRYLIC_RATES,
   DEFAULT_LANDING,
   DEFAULT_QUOTE_SETTINGS,
   LIGHTBOX_RATES,
@@ -149,7 +150,17 @@ export default function BuilderSettings() {
   const [landing, setLanding] = useState<LandingSettings>(DEFAULT_LANDING);
   const [quote, setQuote] = useState<QuoteSettings>(DEFAULT_QUOTE_SETTINGS);
   const setPricing = (patch: Partial<QuoteSettings["pricing"]>) => setQuote((q) => ({ ...q, pricing: { ...q.pricing, ...patch } }));
-  const setRate = (group: "materials" | "lightbox", id: string, key: "without" | "with", value: number) => setQuote((q) => ({ ...q, pricing: { ...q.pricing, [group]: { ...q.pricing[group], [id]: { ...q.pricing[group][id], [key]: value } } } }));
+  const setRate = (group: "materials" | "lightbox" | "acrylic", id: string, key: "without" | "with", value: number) =>
+    setQuote((q) => ({
+      ...q,
+      pricing: {
+        ...q.pricing,
+        [group]: {
+          ...q.pricing[group],
+          [id]: { ...(q.pricing[group]?.[id] ?? { without: 0, with: 0 }), [key]: value },
+        },
+      },
+    }));
   const [catalog, setCatalog] = useState<SignType[]>(DEFAULT_SIGN_TYPES);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -581,12 +592,33 @@ export default function BuilderSettings() {
                   {[...MATERIAL_RATES.map(([id, name]) => ({ group: "materials" as const, id, name })), ...LIGHTBOX_RATES.map(([id, name]) => ({ group: "lightbox" as const, id, name }))].map(({ group, id, name }) => (
                     <div key={`${group}-${id}`} className="grid grid-cols-[1.2fr_1fr_1fr] gap-3 items-center px-4 py-2 border-t border-line">
                       <span className="text-sm font-semibold">{name}</span>
-                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group][id].without} onChange={(e) => setRate(group, id, "without", +e.target.value || 0)} />
-                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group][id].with} onChange={(e) => setRate(group, id, "with", +e.target.value || 0)} />
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group]?.[id]?.without ?? 0} onChange={(e) => setRate(group, id, "without", +e.target.value || 0)} />
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing[group]?.[id]?.with ?? 0} onChange={(e) => setRate(group, id, "with", +e.target.value || 0)} />
                     </div>
                   ))}
                 </div>
-                <p className="text-[11px] text-fog mt-2">Lightbox circles are capped at 3 ft diameter in the builder. Double-face signs double the material and printing rates.</p>
+                <p className="text-[11px] text-fog mt-2">Lightbox circles are capped at 3 ft diameter in the builder. Double-face signs double the material and printing rates. Acrylic is in its own table below.</p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3">Acrylic rates · ₱ / sqft</h3>
+                <p className="text-[11px] text-fog mb-2">Used when Material = Acrylic. Pick the matching build in Quote Builder → Options. Area is panel or letter-box sqft.</p>
+                <div className="rounded-xl border border-teal/30 overflow-hidden">
+                  <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 bg-ink/50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-fog">
+                    <span>Acrylic build</span><span>Without light</span><span>With light</span>
+                  </div>
+                  {ACRYLIC_RATES.map(([id, name]) => (
+                    <div key={id} className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 items-center px-4 py-2 border-t border-line">
+                      <span className="text-sm font-semibold">{name}</span>
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing.acrylic?.[id]?.without ?? 0} onChange={(e) => setRate("acrylic", id, "without", +e.target.value || 0)} />
+                      <input type="number" min={0} step={0.01} className={input} value={quote.pricing.acrylic?.[id]?.with ?? 0} onChange={(e) => setRate("acrylic", id, "with", +e.target.value || 0)} />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 max-w-xs">
+                  <label className={label}>Acrylic minimum charge · per sign</label>
+                  <input type="number" min={0} step={0.01} className={input} value={quote.pricing.acrylicMinimumCharge ?? 0} onChange={(e) => setPricing({ acrylicMinimumCharge: +e.target.value || 0 })} />
+                </div>
               </div>
 
               <div>
