@@ -292,8 +292,9 @@ export default function QuoteBuilder() {
   const [siteMockup, setSiteMockup] = useState<string>(""); // clear iso for overlay
   /** Wizard step 1–6 so Live 3D stays fully visible */
   const [buildStep, setBuildStep] = useState(1);
-  /** Optional: hide 3D studio background (useful for clear acrylic / logo cut-outs) */
-  const [clearBg, setClearBg] = useState(false);
+  /** Original logo before white-BG removal (so user can restore) */
+  const [logoOriginal, setLogoOriginal] = useState("");
+  const [logoBgCleared, setLogoBgCleared] = useState(false);
   /** Draft strings so size fields can be cleared and typed freely */
   const [dimUnit, setDimUnit] = useState<LenUnit>("ft");
   const [depthUnit, setDepthUnit] = useState<LenUnit>("in");
@@ -438,9 +439,69 @@ export default function QuoteBuilder() {
   };
 
   const onLogoFile = (file: File | null) => {
-    if (!file) { setLogoPreview(""); return; }
-    const reader = new FileReader(); reader.onload = () => setLogoPreview(String(reader.result || "")); reader.readAsDataURL(file);
+    if (!file) {
+      setLogoPreview("");
+      setLogoOriginal("");
+      setLogoBgCleared(false);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result || "");
+      setLogoPreview(data);
+      setLogoOriginal(data);
+      setLogoBgCleared(false);
+    };
+    reader.readAsDataURL(file);
   };
+
+  /** Make near-white pixels transparent so logo sits clean on clear acrylic / 3D face */
+  const removeLogoWhiteBackground = useCallback(() => {
+    const src = logoOriginal || logoPreview || logoUrl;
+    if (!src) return;
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imageData.data;
+      // Threshold: pixels that are nearly white become transparent (soft edge)
+      const whiteCutoff = 245;
+      const soft = 15;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const min = Math.min(r, g, b);
+        const max = Math.max(r, g, b);
+        // Near-white and low saturation
+        if (min >= whiteCutoff - soft && max - min < 30) {
+          const t = Math.max(0, Math.min(1, (min - (whiteCutoff - soft)) / soft));
+          d[i + 3] = Math.round(d[i + 3] * (1 - t));
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      const cleared = canvas.toDataURL("image/png");
+      if (!logoOriginal) setLogoOriginal(src);
+      setLogoPreview(cleared);
+      setLogoBgCleared(true);
+    };
+    img.onerror = () => {
+      setMsg("Could not process logo (try uploading the file instead of a link).");
+      setTimeout(() => setMsg(""), 3000);
+    };
+    img.src = src;
+  }, [logoOriginal, logoPreview, logoUrl]);
+
+  const restoreLogoBackground = useCallback(() => {
+    if (logoOriginal) {
+      setLogoPreview(logoOriginal);
+      setLogoBgCleared(false);
+    }
+  }, [logoOriginal]);
 
   const onSitePhotoFile = (file: File | null) => {
     if (!file) { setSitePhoto(""); return; }
@@ -1343,19 +1404,64 @@ export default function QuoteBuilder() {
               <div>
                 <p className={stepCls}>5 · Logo (optional)</p>
                 <h2 className="font-display text-lg font-bold">Put the client’s logo on the preview</h2>
-                <p className="text-[11px] text-fog mt-0.5">Skip if you don’t have a logo yet — you can still quote.</p>
+                <p className="text-[11px] text-fog mt-0.5">Skip if you don’t have a logo yet — you can still quote. Use Remove white background for clear acrylic / cut-outs.</p>
               </div>
               <div className="grid sm:grid-cols-[1fr_auto] gap-3">
-                <input className={inputCls} value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="Paste logo image link (optional)" />
+                <input
+                  className={inputCls}
+                  value={logoUrl}
+                  onChange={(e) => {
+                    setLogoUrl(e.target.value);
+                    setLogoPreview("");
+                    setLogoOriginal("");
+                    setLogoBgCleared(false);
+                  }}
+                  placeholder="Paste logo image link (optional)"
+                />
                 <label className="rounded-xl border border-line bg-ink/30 px-4 py-2.5 text-sm font-semibold cursor-pointer text-center hover:border-teal">
                   Upload logo
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => onLogoFile(e.target.files?.[0] ?? null)} />
                 </label>
               </div>
               {activeLogo && (
-                <div className="flex items-center gap-3 rounded-xl border border-line bg-white p-3">
-                  <img src={activeLogo} alt="Client logo" className="h-16 w-32 object-contain" />
-                  <button onClick={() => { setLogoUrl(""); setLogoPreview(""); }} className="text-xs text-red-500">Clear</button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 rounded-xl border border-line bg-white p-3">
+                    <img src={activeLogo} alt="Client logo" className="h-16 w-32 object-contain" />
+                    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                      {logoBgCleared ? (
+                        <button
+                          type="button"
+                          onClick={restoreLogoBackground}
+                          className="text-xs font-semibold text-teal text-left hover:underline"
+                        >
+                          Restore original
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={removeLogoWhiteBackground}
+                          className="rounded-lg border border-gold/50 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold hover:bg-gold/20 text-left"
+                        >
+                          Remove white background
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLogoUrl("");
+                          setLogoPreview("");
+                          setLogoOriginal("");
+                          setLogoBgCleared(false);
+                        }}
+                        className="text-xs text-red-500 text-left hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  {logoBgCleared && (
+                    <p className="text-[11px] text-fog">White / light background removed — logo is transparent for clear acrylic preview.</p>
+                  )}
                 </div>
               )}
               <div className="flex justify-between pt-1 gap-2">
@@ -1413,28 +1519,14 @@ export default function QuoteBuilder() {
           {/* RIGHT — live 3D (desktop: stays in place / scrolls only within right column) */}
           <aside className="order-1 lg:order-2 space-y-3 min-h-0 lg:h-full lg:overflow-y-auto lg:sticky lg:top-20">
             <div className="rounded-2xl border border-line bg-panel overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-line flex items-center justify-between gap-2 flex-wrap">
+              <div className="px-4 py-2.5 border-b border-line flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Live 3D</p>
                   <p className="text-sm font-semibold">Updates as you build</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-fog">
-                    {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(height, dimUnit)} H × ${fmtLen(width, dimUnit)} W`} · {fmtLen(thicknessIn / 12, depthUnit)} T
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setClearBg((v) => !v)}
-                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold border transition ${
-                      clearBg
-                        ? "border-teal bg-teal/20 text-teal"
-                        : "border-line text-fog hover:border-gold hover:text-white"
-                    }`}
-                    title="Hide studio background — better for clear acrylic / logo cut-outs"
-                  >
-                    {clearBg ? "BG off" : "Remove BG"}
-                  </button>
-                </div>
+                <span className="text-xs text-fog">
+                  {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(height, dimUnit)} H × ${fmtLen(width, dimUnit)} W`} · {fmtLen(thicknessIn / 12, depthUnit)} T
+                </span>
               </div>
               <div className="h-[min(52vh,520px)] min-h-[360px] lg:h-[min(58vh,520px)]">
                 <SignScene
@@ -1452,7 +1544,6 @@ export default function QuoteBuilder() {
                   bolts={boltSpec}
                   unit={dimUnit}
                   depthUnit={depthUnit}
-                  clearBackground={clearBg}
                   text="Your Logo"
                   logoUrl={activeLogo}
                   showDimensions
