@@ -87,6 +87,8 @@ interface LineItem {
   qty: number;
   face: string;
   lighting: string;
+  /** colour of the light (hex) when the sign is lit */
+  lightHex?: string;
   printing: string;
   mounting: string;
   note: string;
@@ -171,6 +173,13 @@ const MOUNTING_HELP: Record<string, string> = {
 };
 
 const LIGHTING_OPTIONS = [["without", "Without Light"], ["with", "With Light"]] as const;
+/** Light colours offered when the sign is lit (custom = any colour the client wants) */
+const LIGHT_COLORS = [
+  { id: "warm", name: "Warm white", sub: "Cozy yellow · ~3000K", hex: "#ffb347" },
+  { id: "cool", name: "Cool white", sub: "Bluish white · ~6500K", hex: "#9fd4ff" },
+  { id: "daylight", name: "Daylight", sub: "Neutral white · ~5000K", hex: "#fff6c9" },
+] as const;
+type LightColorId = (typeof LIGHT_COLORS)[number]["id"] | "custom";
 const PRINTING_OPTIONS = [["direct", "Direct to materials"], ["sticker", "Sticker print"], ["cutout", "Sticker Cut Out"], ["uv", "UV Print"]] as const;
 
 /** Mini side-view icons so the mounting choice is visual. */
@@ -241,6 +250,8 @@ export default function QuoteBuilder() {
   const [thicknessIn, setThicknessIn] = useState(2);
   const [qty, setQty] = useState(1);
   const [lighting, setLighting] = useState("without");
+  const [lightColorId, setLightColorId] = useState<LightColorId>("warm");
+  const [customLightHex, setCustomLightHex] = useState("#ff3b6b");
   const [printing, setPrinting] = useState("sticker");
   const [presetId, setPresetId] = useState("");
   const [letterText, setLetterText] = useState("BRAND");
@@ -295,6 +306,9 @@ export default function QuoteBuilder() {
   /** Original logo before white-BG removal (so user can restore) */
   const [logoOriginal, setLogoOriginal] = useState("");
   const [logoBgCleared, setLogoBgCleared] = useState(false);
+  /** Background removal strength (how far a colour may drift from the detected background) + whether to also clear enclosed areas */
+  const [logoTol, setLogoTol] = useState(60);
+  const [logoEnclosed, setLogoEnclosed] = useState(false);
   /** Logo size on the face (% of panel W / H) — independent so client can stretch corner-to-corner */
   const [logoScaleW, setLogoScaleW] = useState(90);
   const [logoScaleH, setLogoScaleH] = useState(90);
@@ -307,6 +321,9 @@ export default function QuoteBuilder() {
   const [boltCount, setBoltCount] = useState<2 | 4 | 6>(4);
   const [panelTint, setPanelTint] = useState<PanelTint>("clear");
   const [standoffMm, setStandoffMm] = useState(25);
+  /** Snapshot of the build form at the moment "Add to Quote" was pressed — while it still matches, the sign is already in the total */
+  const [addedSig, setAddedSig] = useState("");
+  const markAdded = useRef(false);
   const sceneRef = useRef<SignSceneHandle>(null);
   const quoteSheetRef = useRef<HTMLElement | null>(null);
   const sitePhotoRef = useRef<HTMLDivElement | null>(null);
@@ -338,7 +355,11 @@ export default function QuoteBuilder() {
   const sidesLabel = sides === "double" ? "Double face" : "Single face";
   const serviceName = serviceId === "custom" && customName.trim() ? `Custom · ${customName.trim()}` : def.name;
   const faceLabel = isLightbox ? `Lightbox · ${lbBuildLabel}` : serviceName;
-  const lightingLabel = labelOf(LIGHTING_OPTIONS, lighting);
+  /** Neon already has its own tube colours, so the light-colour question is for every other lit sign */
+  const askLightColor = lit && serviceId !== "neon";
+  const lightHex = lightColorId === "custom" ? customLightHex : (LIGHT_COLORS.find((c) => c.id === lightColorId)?.hex ?? "#ffb347");
+  const lightColorName = lightColorId === "custom" ? `Custom ${customLightHex.toUpperCase()}` : (LIGHT_COLORS.find((c) => c.id === lightColorId)?.name ?? "");
+  const lightingLabel = askLightColor ? `With Light · ${lightColorName}` : labelOf(LIGHTING_OPTIONS, lighting);
   const printingLabel = def.printing ? labelOf(PRINTING_OPTIONS, printing) : "";
   const variant = isLightbox ? lbBuild : serviceId === "acrylic" ? "acrylic" : "panaflex";
 
@@ -380,7 +401,7 @@ export default function QuoteBuilder() {
   }, [lettersOn, letterDepthUsed]);
   const lettersSpec: LettersSpec | undefined = layout && lettersOn ? {
     layout, scale: lScale, depthFt: letterDepthUsed / 12, faceFt: flatCut ? letterDepthUsed / 12 : (activePreset?.thick ? 5 : 3) / 304.8,
-    faceColor: bodyColor, returnColor, glow: activePreset?.id === "ac-letters-lit" ? letterGlow : "none",
+    faceColor: bodyColor, returnColor, glow: activePreset?.id === "ac-letters-lit" ? letterGlow : "none", glowColor: askLightColor ? lightHex : undefined,
     neon: isNeonText, neonColors: NEON_PALETTE.slice(0, Math.max(1, neonColors)), backing: neonBacking,
   } : undefined;
   const isBoltPanel = !!activePreset && BOLT_PRESET_IDS.includes(activePreset.id);
@@ -514,40 +535,94 @@ export default function QuoteBuilder() {
     reader.readAsDataURL(file);
   };
 
-  /** Make near-white pixels transparent so logo sits clean on clear acrylic / 3D face */
-  const removeLogoWhiteBackground = useCallback(() => {
+  /**
+   * Remove the logo's background whatever its colour (white, black, red, photo-grey…).
+   * 1) find the background colour from the image border, 2) flood-fill from the edges so only the
+   * connected background goes (same-coloured parts inside the artwork stay), 3) soften the edge.
+   * "enclosed" also clears background-coloured pockets inside the artwork (e.g. inside letters).
+   */
+  const removeLogoBackground = useCallback((tol: number = logoTol, enclosed: boolean = logoEnclosed) => {
     const src = logoOriginal || logoPreview || logoUrl;
     if (!src) return;
     const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
+      const MAX = 1800;
+      const k = Math.min(1, MAX / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+      const W = Math.max(1, Math.round((img.naturalWidth || img.width) * k));
+      const H = Math.max(1, Math.round((img.naturalHeight || img.height) * k));
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
+      canvas.width = W; canvas.height = H;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) return;
-      // Start fully transparent so cleared pixels stay alpha=0 (not black)
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H);
+      let imageData: ImageData;
+      try { imageData = ctx.getImageData(0, 0, W, H); } catch {
+        setMsg("Could not process logo (try uploading the file instead of a link).");
+        setTimeout(() => setMsg(""), 3000);
+        return;
+      }
       const d = imageData.data;
-      // Near-white / light gray → transparent (soft falloff so edges look clean)
-      const fullClear = 230; // fully transparent at this brightness and above
-      const softStart = 200; // begin fading alpha
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        const min = Math.min(r, g, b);
-        const max = Math.max(r, g, b);
-        const sat = max - min;
-        // Light, low-saturation pixels (white / off-white / light gray BG)
-        if (min >= softStart && sat < 40) {
-          if (min >= fullClear) {
-            d[i + 3] = 0; // fully transparent — not black
-          } else {
-            const t = (min - softStart) / (fullClear - softStart);
-            d[i + 3] = Math.round(d[i + 3] * (1 - t));
-          }
+
+      // 1) background colour = most common colour along the border
+      const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
+      let borderTotal = 0, borderClear = 0;
+      const sample = (x: number, y: number) => {
+        const i = (y * W + x) * 4;
+        borderTotal++;
+        if (d[i + 3] < 16) { borderClear++; return; }
+        const key = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
+        const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+        e.n++; e.r += d[i]; e.g += d[i + 1]; e.b += d[i + 2];
+        bins.set(key, e);
+      };
+      for (let x = 0; x < W; x++) { sample(x, 0); sample(x, H - 1); }
+      for (let y = 1; y < H - 1; y++) { sample(0, y); sample(W - 1, y); }
+      if (borderClear / borderTotal > 0.6 || bins.size === 0) {
+        setMsg("This logo already has a transparent background.");
+        setTimeout(() => setMsg(""), 3000);
+        return;
+      }
+      let best = { n: 0, r: 255, g: 255, b: 255 };
+      bins.forEach((e) => { if (e.n > best.n) best = e; });
+      const br = best.r / best.n, bg = best.g / best.n, bb = best.b / best.n;
+
+      // 2) distance to the background colour
+      const dist = new Float32Array(W * H);
+      for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+        const dr = d[i] - br, dg = d[i + 1] - bg, db = d[i + 2] - bb;
+        dist[p] = Math.sqrt(dr * dr + dg * dg + db * db);
+      }
+      const t1 = tol;
+      const t2 = tol * 1.6 + 8;
+      const removed = new Uint8Array(W * H);
+      if (enclosed) {
+        for (let p = 0; p < W * H; p++) if (dist[p] <= t1 || d[p * 4 + 3] < 16) removed[p] = 1;
+      } else {
+        const stack: number[] = [];
+        const push = (p: number) => { if (!removed[p] && (dist[p] <= t1 || d[p * 4 + 3] < 16)) { removed[p] = 1; stack.push(p); } };
+        for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+        for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+        while (stack.length) {
+          const p = stack.pop() as number;
+          const x = p % W, y = (p - x) / W;
+          if (x > 0) push(p - 1);
+          if (x < W - 1) push(p + 1);
+          if (y > 0) push(p - W);
+          if (y < H - 1) push(p + W);
         }
+      }
+      // 3) apply + soft edge on pixels next to removed background
+      for (let p = 0; p < W * H; p++) {
+        const i = p * 4;
+        if (removed[p]) { d[i + 3] = 0; continue; }
+        if (dist[p] >= t2) continue;
+        const x = p % W, y = (p - x) / W;
+        const nearBg = (x > 0 && removed[p - 1]) || (x < W - 1 && removed[p + 1]) || (y > 0 && removed[p - W]) || (y < H - 1 && removed[p + W]);
+        if (!nearBg) continue;
+        const a = (dist[p] - t1) / (t2 - t1);
+        d[i + 3] = Math.round(d[i + 3] * Math.max(0, Math.min(1, a)));
       }
       ctx.putImageData(imageData, 0, 0);
       const cleared = canvas.toDataURL("image/png");
@@ -560,7 +635,7 @@ export default function QuoteBuilder() {
       setTimeout(() => setMsg(""), 3000);
     };
     img.src = src;
-  }, [logoOriginal, logoPreview, logoUrl]);
+  }, [logoOriginal, logoPreview, logoUrl, logoTol, logoEnclosed]);
 
   const restoreLogoBackground = useCallback(() => {
     if (logoOriginal) {
@@ -596,13 +671,14 @@ export default function QuoteBuilder() {
     setLines((prev) => [...prev, {
       id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, unit: dimUnit, depthUnit, areaSqft, qty,
-      face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · ${isBoltPanel ? `${PANEL_TINTS.find((t) => t.id === panelTint)?.label.toLowerCase()} panel ${panelMm}mm` : `face ${colorName(bodyColor)} / ${isLetters ? "siding" : "depth"} ${colorName(returnColor)}`}`, lighting: lightingLabel, printing: printingLabel, mounting: mountingShown, note, unitCost: live.unitCost,
+      face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · ${isBoltPanel ? `${PANEL_TINTS.find((t) => t.id === panelTint)?.label.toLowerCase()} panel ${panelMm}mm` : `face ${colorName(bodyColor)} / ${isLetters ? "siding" : "depth"} ${colorName(returnColor)}`}`, lighting: lightingLabel, lightHex: askLightColor ? lightHex : undefined, printing: printingLabel, mounting: mountingShown, note, unitCost: live.unitCost,
       breakdown: (live as { breakdown?: LineItem["breakdown"] }).breakdown ?? {
         construction: r.construction * areaSqft, face: r.face * areaSqft, lighting: r.lighting * areaSqft, printing: r.printing * areaSqft,
         markup: live.unitCost - (r.construction + r.face + r.lighting + r.printing) * areaSqft,
       },
       hasTbd: live.hasTbd, renders, logoUrl: activeLogo,
     }]);
+    setAddedSig(buildSig);
     setNote(""); setMsg("Item added · front, side & 3D renders captured ✓"); setTimeout(() => setMsg(""), 2500);
   };
 
@@ -621,6 +697,7 @@ export default function QuoteBuilder() {
     setThicknessIn(2);
     setQty(1);
     setLighting("without");
+    setLightColorId("warm");
     setPrinting("sticker");
     setPresetId("");
     setLetterText("BRAND");
@@ -670,6 +747,23 @@ export default function QuoteBuilder() {
   /** VAT is not part of our rates; it is added manually on the Official Receipt. */
   const vat = 0;
   const grand = afterDisc + vat;
+  /**
+   * LIVE quote total while building = everything already in the quote + the sign being built,
+   * run through the SAME rules as the final sheet (rush %, shipping, mobilization, discount).
+   * This is the one number the builder shows, so it always matches the final quotation.
+   */
+  const buildSig = [shape, serviceId, sides, width, height, diameter, thicknessIn, qty, lighting, lightColorId, customLightHex, printing, presetId, lbBuild, customName, mounting, armCount, bodyColor, returnColor, letterText, letterFont, letterHeightIn, letterDepthIn, letterGlow, neonBacking, neonColors, psu, leftoverLost, logoScaleW, logoScaleH, activeLogo?.length ?? 0, panelTint, boltCount, boltFinish, standoffMm].join("|");
+  useEffect(() => {
+    if (markAdded.current) { markAdded.current = false; setAddedSig(buildSig); }
+  });
+  const alreadyAdded = lines.length > 0 && addedSig === buildSig;
+  const candidateAmount = areaSqft > 0 && !alreadyAdded ? live.unitCost * qty : 0;
+  const projSubtotal = subtotal + candidateAmount;
+  const projMobilDefault = (lines.some((l) => l.areaSqft > qs.presetSettings.mobilThresholdSqft) || (candidateAmount > 0 && areaSqft > qs.presetSettings.mobilThresholdSqft)) ? qs.presetSettings.mobilLarge : qs.presetSettings.mobilSmall;
+  const projMobil = mobilization ?? projMobilDefault;
+  const projRush = deliveryType === "rush" ? projSubtotal * (rushPct / 100) : 0;
+  const projShipping = deliveryType === "shipping" ? shippingFee : 0;
+  const projGrand = Math.max(0, projSubtotal - discount) + projRush + projMobil + projShipping + vat;
   const quoteNo = `${qs.quotePrefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(lines.length || 1).padStart(2, "0")}`;
 
   /** Only drafts that have a real user-chosen filename */
@@ -763,6 +857,7 @@ export default function QuoteBuilder() {
     }
     // Restore quote items (with renders) onto the sheet
     setLines(linesArr);
+    markAdded.current = true; // the form now mirrors the last saved item — don't count it twice
     setDiscount(Number(totals.discount ?? 0));
     setMobilization(totals.mobilization == null ? null : Number(totals.mobilization));
     setDeliveryType(totals.deliveryType === "rush" || totals.deliveryType === "shipping" ? totals.deliveryType : "normal");
@@ -798,6 +893,12 @@ export default function QuoteBuilder() {
       // Best-effort lighting / print from labels
       if (/with\s*light/i.test(last.lighting || "") && !/without/i.test(last.lighting || "")) {
         setLighting("with");
+        const lbl = last.lighting || "";
+        const custom = lbl.match(/custom\s*(#[0-9a-f]{6})/i);
+        if (custom) { setLightColorId("custom"); setCustomLightHex(custom[1].toLowerCase()); }
+        else if (/cool/i.test(lbl)) setLightColorId("cool");
+        else if (/daylight/i.test(lbl)) setLightColorId("daylight");
+        else setLightColorId("warm");
       } else {
         setLighting("without");
       }
@@ -1503,6 +1604,35 @@ export default function QuoteBuilder() {
                     </button>
                   ))}
                 </div>
+                {askLightColor && (
+                  <div className="mt-3 rounded-xl border border-line bg-ink/30 p-3 space-y-2.5">
+                    <label className={labelCls}>What color is the light?</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {LIGHT_COLORS.map((c) => (
+                        <button key={c.id} type="button" onClick={() => setLightColorId(c.id)} className={`rounded-xl border px-3 py-2 text-left transition ${lightColorId === c.id ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                          <span className="flex items-center gap-2 text-sm font-semibold">
+                            <span className="inline-block w-3.5 h-3.5 rounded-full border border-white/50 shrink-0" style={{ backgroundColor: c.hex }} />
+                            {c.name}
+                          </span>
+                          <span className="block text-[11px] opacity-80 mt-0.5">{c.sub}</span>
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setLightColorId("custom")} className={`rounded-xl border px-3 py-2 text-left transition ${lightColorId === "custom" ? "border-gold bg-gold text-ink" : "border-line bg-ink/30 text-fog hover:border-gold"}`}>
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          <span className="inline-block w-3.5 h-3.5 rounded-full border border-white/50 shrink-0" style={{ background: lightColorId === "custom" ? customLightHex : "conic-gradient(#ff5f6d,#ffc371,#47e891,#4fc3f7,#b388ff,#ff5f6d)" }} />
+                          Custom color
+                        </span>
+                        <span className="block text-[11px] opacity-80 mt-0.5">Any color you like</span>
+                      </button>
+                    </div>
+                    {lightColorId === "custom" && (
+                      <label className="flex items-center gap-3 text-xs text-fog">
+                        <input type="color" value={customLightHex} onChange={(e) => setCustomLightHex(e.target.value)} className="h-10 w-14 rounded-lg border border-line bg-transparent cursor-pointer" />
+                        <span>Pick the light color · <strong className="text-white">{customLightHex.toUpperCase()}</strong></span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
 
               {def.printing && (
@@ -1627,10 +1757,10 @@ export default function QuoteBuilder() {
                       ) : (
                         <button
                           type="button"
-                          onClick={removeLogoWhiteBackground}
+                          onClick={() => removeLogoBackground()}
                           className="rounded-lg border border-gold/50 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-gold hover:bg-gold/20 text-left"
                         >
-                          Remove white background
+                          Remove background (any color)
                         </button>
                       )}
                       <button
@@ -1650,7 +1780,18 @@ export default function QuoteBuilder() {
                     </div>
                   </div>
                   {logoBgCleared && (
-                    <p className="text-[11px] text-fog">White / light background removed — logo is transparent for clear acrylic preview.</p>
+                    <div className="rounded-xl border border-line bg-ink/30 p-3 space-y-2">
+                      <p className="text-[11px] text-fog">Background removed — the logo is transparent now, whatever color it was. If a bit of the background is left or the logo lost parts, adjust below.</p>
+                      <label className="flex items-center gap-2 text-xs text-fog">
+                        <span className="w-16 shrink-0">Strength</span>
+                        <input type="range" min={10} max={160} value={logoTol} onChange={(e) => { const v = +e.target.value; setLogoTol(v); removeLogoBackground(v, logoEnclosed); }} className="flex-1" />
+                        <span className="w-10 text-right font-semibold text-white">{logoTol}</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-fog cursor-pointer">
+                        <input type="checkbox" checked={logoEnclosed} onChange={(e) => { setLogoEnclosed(e.target.checked); removeLogoBackground(logoTol, e.target.checked); }} />
+                        Also clear background color trapped inside the artwork (e.g. inside letters)
+                      </label>
+                    </div>
                   )}
                   <div className="rounded-xl border border-line bg-ink/30 p-3 space-y-2">
                     <p className="text-[11px] font-semibold text-fog uppercase tracking-wider">Logo size on panel</p>
@@ -1718,14 +1859,37 @@ export default function QuoteBuilder() {
                   </div>
                 )}
               </div>
+              <div>
+                <label className={labelCls}>Mobilization / travel (whole quote)</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-fog">₱</span>
+                  <input type="number" min={0} value={projMobil} onChange={(e) => setMobilization(+e.target.value || 0)} className={inputCls} />
+                </div>
+              </div>
               <textarea className={`${inputCls} min-h-16`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the client (e.g. includes install…)" />
+
+              {/* One live total — recalculates on every change (size, qty, rush, shipping, mobilization, discount) */}
+              <div className="rounded-xl border border-gold/40 bg-ink/40 p-3 space-y-1 text-sm">
+                {!alreadyAdded && <div className="flex justify-between text-fog"><span>This sign{qty > 1 ? ` (${qty} × ₱${fmt(live.unitCost)})` : ""}</span><span className="text-white">₱{fmt(candidateAmount)}</span></div>}
+                {lines.length > 0 && <div className="flex justify-between text-fog"><span>{alreadyAdded ? "Items in quote" : "Already in quote"} ({lines.length} item{lines.length > 1 ? "s" : ""})</span><span className="text-white">₱{fmt(subtotal)}</span></div>}
+                {discount > 0 && <div className="flex justify-between text-fog"><span>Discount</span><span className="text-white">−₱{fmt(discount)}</span></div>}
+                {deliveryType === "rush" && <div className="flex justify-between text-fog"><span>Rush order (+{rushPct}% of ₱{fmt(projSubtotal)})</span><span className="text-white">₱{fmt(projRush)}</span></div>}
+                {deliveryType === "shipping" && <div className="flex justify-between text-fog"><span>Shipping</span><span className="text-white">{projShipping > 0 ? `₱${fmt(projShipping)}` : "Rate to be advised"}</span></div>}
+                {projMobil > 0 && <div className="flex justify-between text-fog"><span>Mobilization (travel)</span><span className="text-white">₱{fmt(projMobil)}</span></div>}
+                <div className="flex justify-between items-end border-t border-line pt-2 mt-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-gold">Quote total{alreadyAdded ? "" : " · with this sign"}</span>
+                  <span className="text-2xl font-bold text-gold leading-none">₱{fmt(projGrand)}</span>
+                </div>
+                <p className="text-[10px] text-fog text-right">VAT not included · updates automatically</p>
+              </div>
+
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="text-xs text-fog">
                   <span className="block">{areaSqft.toFixed(2)} sqft · qty {qty}</span>
                   {live.hasTbd && <span className="text-amber-300">Price TBD — check Builder Settings rates</span>}
                 </div>
                 <button onClick={() => { addLine(); refreshSiteMockup(); }} className="rounded-full bg-gold text-ink px-7 py-3 font-bold text-base hover:bg-gold-dim shadow-lg shadow-gold/20">
-                  Add to Quote · ₱{fmt(live.unitCost * qty)}
+                  {alreadyAdded ? "Added ✓ · add another copy" : "Add to Quote"}
                 </button>
               </div>
               <div className="flex justify-between pt-1 gap-2">
@@ -1761,6 +1925,8 @@ export default function QuoteBuilder() {
                   service={serviceId}
                   doubleSided={sides === "double"}
                   lit={lit}
+                  lightColor={askLightColor ? lightHex : undefined}
+                  lightLabel={askLightColor ? lightColorName : undefined}
                   preview={isLightbox ? "lightbox" : "panaflex"}
                   traits={traits}
                   letters={lettersSpec}
@@ -1784,23 +1950,20 @@ export default function QuoteBuilder() {
               Drag to rotate the preview. When you hit <strong className="text-white">Add to Quote</strong>, we save front, side &amp; 3D views with sizes for the client sheet.
             </p>
 
-            {/* Live price card — always visible while building */}
-            <div className="rounded-2xl border border-gold/30 bg-panel p-4 space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-gold font-bold">This sign right now</p>
-              <div className="flex items-end justify-between gap-2">
-                <div>
-                  <p className="text-2xl font-bold text-gold leading-none">₱{fmt(live.unitCost * qty)}</p>
-                  <p className="text-[11px] text-fog mt-1">
-                    {qty > 1 ? `${qty} × ₱${fmt(live.unitCost)}` : "per unit"} · {areaSqft.toFixed(1)} sqft
-                  </p>
-                </div>
-                {lines.length > 0 && (
-                  <div className="text-right">
-                    <p className="text-[10px] text-fog uppercase">Quote total</p>
-                    <p className="text-lg font-bold">₱{fmt(grand)}</p>
-                  </div>
-                )}
-              </div>
+            {/* Live quote total — the same single calculation as the final sheet */}
+            <div className="rounded-2xl border border-gold/30 bg-panel p-4 space-y-1.5">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-gold font-bold">Quote total{alreadyAdded ? "" : " · with this sign"}</p>
+              <p className="text-2xl font-bold text-gold leading-none">₱{fmt(projGrand)}</p>
+              <p className="text-[11px] text-fog">
+                {[
+                  alreadyAdded ? "" : `This sign ₱${fmt(candidateAmount)}${qty > 1 ? ` (${qty} × ₱${fmt(live.unitCost)})` : ""}`,
+                  lines.length > 0 ? `${lines.length} in quote ₱${fmt(subtotal)}` : "",
+                  deliveryType === "rush" ? `rush +${rushPct}% ₱${fmt(projRush)}` : "",
+                  deliveryType === "shipping" ? (projShipping > 0 ? `shipping ₱${fmt(projShipping)}` : "shipping TBA") : "",
+                  projMobil > 0 ? `mobilization ₱${fmt(projMobil)}` : "",
+                  discount > 0 ? `discount −₱${fmt(discount)}` : "",
+                ].filter(Boolean).join(" · ")} · {areaSqft.toFixed(1)} sqft
+              </p>
               {live.hasTbd && (
                 <p className="text-[11px] text-amber-300">Rates not set — open Settings to fill prices.</p>
               )}
@@ -1809,7 +1972,7 @@ export default function QuoteBuilder() {
         </div>
 
         {/* ── Site photo + place the 3D sign on it ── */}
-        <div className="no-export mx-auto w-full max-w-[240mm] mb-4 rounded-2xl border border-line bg-white p-5 shadow-sm text-ink">
+        <div className="no-export mx-auto w-full max-w-[290mm] mb-4 rounded-2xl border border-line bg-white p-5 shadow-sm text-ink">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
             <div>
               <h3 className="text-base font-bold flex items-center gap-2">
@@ -1933,7 +2096,7 @@ export default function QuoteBuilder() {
         {/* BOTTOM — client-ready proposal sheet (export target) */}
         <section
           ref={quoteSheetRef}
-          className="quote-sheet mx-auto w-full max-w-[240mm] rounded-2xl border border-gray-300 bg-white text-ink overflow-hidden shadow-lg font-sans"
+          className="quote-sheet mx-auto w-full max-w-[290mm] rounded-2xl border border-gray-300 bg-white text-ink overflow-hidden shadow-lg font-sans"
           style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}
         >
           {/* Friendly header — logo only (dwlogo already has company name) */}
@@ -1949,7 +2112,7 @@ export default function QuoteBuilder() {
             </div>
           </div>
 
-          <div className="p-4 space-y-4">
+          <div className="p-3 space-y-3">
             {lines.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-12 no-export">
                 Your quote is empty. Build a sign above, then hit <strong>Add to Quote</strong>. The proposal with 3D views will show here — ready to download and send.
@@ -1969,34 +2132,32 @@ export default function QuoteBuilder() {
                       <p className="text-sm font-bold text-[#011424]">₱{fmt(l.unitCost * l.qty)}</p>
                     </div>
 
-                    {/* Multi-view — images first & larger for client visibility */}
+                    {/* Renders — background removed, trimmed to the sign, shown as large as possible */}
                     <div className="bg-white">
+                      <div className="px-3 pt-3 pb-1 border-b border-gray-200">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">3D preview</p>
+                        {l.renders.iso ? (
+                          <img src={l.renders.iso} alt="3D" className="w-full h-72 sm:h-[26rem] object-contain" />
+                        ) : (
+                          <div className="h-72 sm:h-[26rem] flex items-center justify-center text-xs text-gray-400">—</div>
+                        )}
+                      </div>
                       <div className="grid grid-cols-12 gap-0 border-b border-gray-200">
-                        <div className="col-span-12 sm:col-span-5 border-b sm:border-b-0 sm:border-r border-gray-200 p-3 bg-[#fafbfc]">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">3D preview</p>
-                          {l.renders.iso ? (
-                            <img src={l.renders.iso} alt="3D" className="w-full h-52 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
+                        <div className="col-span-12 sm:col-span-8 border-b sm:border-b-0 sm:border-r border-gray-200 px-3 pt-3 pb-1">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Front</p>
+                          {l.renders.front ? (
+                            <img src={l.renders.front} alt="Front" className="w-full h-60 sm:h-80 object-contain" />
                           ) : (
-                            <div className="h-52 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
+                            <div className="h-60 sm:h-80 flex items-center justify-center text-xs text-gray-400">—</div>
                           )}
                         </div>
-                        <div className="col-span-12 sm:col-span-7 flex flex-col sm:flex-row gap-0">
-                          <div className="flex-1 p-3 border-b sm:border-b-0 sm:border-r border-gray-200">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Front</p>
-                            {l.renders.front ? (
-                              <img src={l.renders.front} alt="Front" className="w-full h-40 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
-                            ) : (
-                              <div className="h-40 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
-                            )}
-                          </div>
-                          <div className="w-full sm:w-[38%] p-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Side</p>
-                            {l.renders.side ? (
-                              <img src={l.renders.side} alt="Side" className="w-full h-40 sm:h-56 object-contain bg-white rounded-lg border border-gray-100" />
-                            ) : (
-                              <div className="h-40 sm:h-56 flex items-center justify-center text-xs text-gray-400 border border-gray-100 rounded-lg bg-white">—</div>
-                            )}
-                          </div>
+                        <div className="col-span-12 sm:col-span-4 px-3 pt-3 pb-1">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Side</p>
+                          {l.renders.side ? (
+                            <img src={l.renders.side} alt="Side" className="w-full h-60 sm:h-80 object-contain" />
+                          ) : (
+                            <div className="h-60 sm:h-80 flex items-center justify-center text-xs text-gray-400">—</div>
+                          )}
                         </div>
                       </div>
                       <div className="p-3 text-[11px] leading-snug">
@@ -2006,7 +2167,7 @@ export default function QuoteBuilder() {
                           <div><span className="text-gray-500 text-[9px] uppercase">Area</span><br /><strong>{l.areaSqft.toFixed(2)} sqft</strong></div>
                           <div><span className="text-gray-500 text-[9px] uppercase">Qty</span><br /><strong>{l.qty}</strong></div>
                           <div className="col-span-2"><span className="text-gray-500 text-[9px] uppercase">Material</span><br /><strong>{l.face}</strong></div>
-                          <div><span className="text-gray-500 text-[9px] uppercase">Lighting</span><br /><strong>{l.lighting}</strong></div>
+                          <div><span className="text-gray-500 text-[9px] uppercase">Lighting</span><br /><strong>{l.lightHex && <span className="inline-block w-2.5 h-2.5 rounded-full border border-gray-400 mr-1 align-[-1px]" style={{ backgroundColor: l.lightHex }} />}{l.lighting}</strong></div>
                           <div><span className="text-gray-500 text-[9px] uppercase">Print</span><br /><strong>{l.printing || "—"}</strong></div>
                           <div className="col-span-2 sm:col-span-4"><span className="text-gray-500 text-[9px] uppercase">Mounting</span><br /><strong>{l.mounting}</strong></div>
                         </div>
@@ -2122,21 +2283,6 @@ export default function QuoteBuilder() {
               <p className="mt-1 text-sm font-semibold">Reply to confirm or request changes.</p>
               <p className="text-gray-500 text-[10px] mt-1">Quote no. {quoteNo}</p>
             </div>
-          </div>
-
-          {/* Terms at the bottom — after images & price */}
-          <div className="border-t border-gray-200 px-4 py-3 text-[10px] text-gray-600 leading-relaxed bg-gray-50">
-            <p className="font-bold text-[11px] text-gray-700 mb-1">Good to know</p>
-            <ul className="list-disc pl-4 space-y-0.5">
-              <li>Sizes shown in feet. Final measure on site before production.</li>
-              <li>Price includes the options listed above. Install / permit fees quoted separately if needed.</li>
-              <li>This is a proposal — not a final invoice until confirmed.</li>
-            </ul>
-            {qs.terms?.length > 0 && (
-              <div className="mt-1.5 pt-1.5 border-t border-gray-200">
-                {qs.terms.map((t, i) => <p key={i}>• {t}</p>)}
-              </div>
-            )}
           </div>
 
           <div className="no-export px-4 py-3 border-t border-gray-100 bg-gray-50 space-y-2">

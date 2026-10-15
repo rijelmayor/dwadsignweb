@@ -14,6 +14,8 @@ export interface LettersSpec {
   faceColor: string;
   returnColor: string;
   glow: "none" | "halo" | "front";
+  /** Light colour (hex) for the halo / face glow */
+  glowColor?: string;
   neon: boolean;
   neonColors: string[];
   backing: "clear" | "black";
@@ -66,10 +68,10 @@ export default function LettersMesh({ spec, widthFt, heightFt, children }: { spe
       )}
       <group position={[-cx * s, -cy * s, neon ? 0.02 : -depthFt / 2]} scale={s}>
         {built.returns.map((g, i) => <mesh key={`r${i}`} geometry={g}><meshStandardMaterial color={spec.returnColor} roughness={0.35} /></mesh>)}
-        {built.faces.map((g, i) => <mesh key={`f${i}`} geometry={g}><meshStandardMaterial color={spec.faceColor} roughness={0.15} emissive={front ? spec.faceColor : "#000000"} emissiveIntensity={front ? 0.9 : 0} /></mesh>)}
+        {built.faces.map((g, i) => <mesh key={`f${i}`} geometry={g}><meshStandardMaterial color={spec.faceColor} roughness={0.15} emissive={front ? (spec.glowColor || spec.faceColor) : "#000000"} emissiveIntensity={front ? 0.9 : 0} /></mesh>)}
         {/* thin rim around the face, in the siding colour — like the reference render */}
         {built.edges.map((g, i) => <lineSegments key={`e${i}`} geometry={g}><lineBasicMaterial color={spec.returnColor} /></lineSegments>)}
-        {built.halos.map((g, i) => <mesh key={`h${i}`} geometry={g}><meshBasicMaterial color="#ffd27a" transparent opacity={0.45} depthWrite={false} /></mesh>)}
+        {built.halos.map((g, i) => <mesh key={`h${i}`} geometry={g}><meshBasicMaterial color={spec.glowColor || "#ffd27a"} transparent opacity={0.45} depthWrite={false} /></mesh>)}
         {built.tubes.map((t, i) => <mesh key={`t${i}`} geometry={t.geo}><meshStandardMaterial color={t.color} emissive={t.color} emissiveIntensity={1.6} toneMapped={false} /></mesh>)}
       </group>
       <Line points={box.map(([x, y]) => [x, y, zTop] as [number, number, number])} color="#0e7c86" lineWidth={1.2} dashed dashSize={0.1} gapSize={0.07} />

@@ -39,6 +39,10 @@ interface SignSceneProps {
   variant?: SceneVariant;
   /** Lightboxes and neon are always internally lit */
   lit?: boolean;
+  /** Color of the light when lit (hex) — tints the bulb icon and the glow behind the sign */
+  lightColor?: string;
+  /** Short label for the light chip, e.g. "Warm white" */
+  lightLabel?: string;
   /** Service id: panaflex | lightbox | acrylic | neon | apc | tarp | sticker | metal | custom */
   service?: string;
   /** Double-faced sign: artwork is repeated on the back */
@@ -179,12 +183,12 @@ function LogoFace({
   );
 }
 
-function BulbIcon({ x, y, z }: { x: number; y: number; z: number }) {
+function BulbIcon({ x, y, z, color = "#ffe566" }: { x: number; y: number; z: number; color?: string }) {
   return (
     <group position={[x, y, z]}>
       <mesh position={[0, 0.08, 0]}>
         <sphereGeometry args={[0.11, 16, 16]} />
-        <meshBasicMaterial color="#ffe566" />
+        <meshBasicMaterial color={color} />
       </mesh>
       <mesh position={[0, -0.05, 0]}>
         <cylinderGeometry args={[0.045, 0.055, 0.07, 12]} />
@@ -192,7 +196,7 @@ function BulbIcon({ x, y, z }: { x: number; y: number; z: number }) {
       </mesh>
       <mesh position={[0, 0.08, -0.01]}>
         <circleGeometry args={[0.2, 24]} />
-        <meshBasicMaterial color="#ffcc33" transparent opacity={0.3} />
+        <meshBasicMaterial color={color} transparent opacity={0.35} />
       </mesh>
       <Text
         position={[0, -0.24, 0]}
@@ -206,6 +210,32 @@ function BulbIcon({ x, y, z }: { x: number; y: number; z: number }) {
         WITH LIGHT
       </Text>
     </group>
+  );
+}
+
+/** Soft radial glow in the light colour, sitting just behind the sign. */
+function GlowPlane({ w, h, z, color }: { w: number; h: number; z: number; color: string }) {
+  const tex = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 256;
+    const g = c.getContext("2d");
+    if (!g) return null;
+    const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, "rgba(255,255,255,0.95)");
+    grad.addColorStop(0.55, "rgba(255,255,255,0.55)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, []);
+  if (!tex) return null;
+  return (
+    <mesh position={[0, 0, z]} renderOrder={-1}>
+      <planeGeometry args={[w * 1.35, h * 1.35]} />
+      <meshBasicMaterial map={tex} color={color} transparent opacity={0.85} depthWrite={false} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-4} toneMapped={false} />
+    </mesh>
   );
 }
 
@@ -303,7 +333,7 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
   if (mount === "wall") {
     // Flush against the wall — very light so the sign stays readable
     return (
-      <mesh position={[0, 0, back - 0.004 - 0.12]}>
+      <mesh position={[0, 0, back - 0.004 - 0.12]} userData={{ wall: true }}>
         <boxGeometry args={[bigW, bigH, 0.24]} />
         <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
       </mesh>
@@ -318,7 +348,7 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
     const armYs = n === 1 ? [0] : [h * 0.22, -h * 0.22];
     return (
       <group>
-        <mesh position={[wallX - 0.12, 0, 0]}>
+        <mesh position={[wallX - 0.12, 0, 0]} userData={{ wall: true }}>
           <boxGeometry args={[0.24, bigH, bigW * 0.5]} />
           <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
         </mesh>
@@ -340,7 +370,7 @@ function Mounting({ mount, w, h, depth, below, brackets = 1 }: { mount: Traits["
     const xs = n === 1 ? [0] : (w > 0.8 ? [-w * 0.32, w * 0.32] : [-0.2, 0.2]);
     return (
       <group>
-        <mesh position={[0, cableTop + 0.08, 0]}>
+        <mesh position={[0, cableTop + 0.08, 0]} userData={{ wall: true }}>
           <boxGeometry args={[Math.max(w * 1.4, 2), 0.12, Math.max(depth * 3, 1.2)]} />
           <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
         </mesh>
@@ -458,7 +488,7 @@ function Artwork({ w, h, depth, logoUrl, circle = false, fontSize, color, outlin
   );
 }
 
-function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
+function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, lightColor, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
   const w = Math.max(0.5, widthFt);
   const h = Math.max(0.3, heightFt);
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -528,7 +558,8 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
       {decor}
       {doubleSided && <group rotation={[0, Math.PI, 0]}>{decor}</group>}
 
-      {withLight && <BulbIcon x={w / 2 + dimOff * 0.7} y={h / 2 + 0.2} z={depth / 2 + 0.05} />}
+      {withLight && lightColor && <GlowPlane w={w} h={h} z={-depth / 2 - 0.003} color={lightColor} />}
+      {withLight && <BulbIcon x={w / 2 + dimOff * 0.7} y={h / 2 + 0.2} z={depth / 2 + 0.05} color={lightColor} />}
 
       {showDimensions && (
         <group>
@@ -542,7 +573,7 @@ function PanaflexMesh({ widthFt, heightFt, traits, logoUrl, showDimensions = tru
   );
 }
 
-function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
+function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, variant = "panaflex", doubleSided, lit, lightColor, below = 0, brackets, unit, depthUnit, logoScaleW, logoScaleH }: SignSceneProps) {
   const d = Math.max(0.5, widthFt);
   const r = d / 2;
   const depth = Math.max(0.02, traits.frameThickness || 0.12);
@@ -626,7 +657,8 @@ function DiscMesh({ widthFt, traits, logoUrl, showDimensions = true, service, va
       {decor}
       {doubleSided && <group rotation={[0, Math.PI, 0]}>{decor}</group>}
 
-      {withLight && <BulbIcon x={r + dimOff * 0.75} y={r * 0.8} z={depth / 2 + 0.05} />}
+      {withLight && lightColor && <GlowPlane w={d} h={d} z={-depth / 2 - 0.003} color={lightColor} />}
+      {withLight && <BulbIcon x={r + dimOff * 0.75} y={r * 0.8} z={depth / 2 + 0.05} color={lightColor} />}
 
       {showDimensions && (
         <group>
@@ -653,42 +685,67 @@ function CaptureController({ camDist, onReady }: { camDist: number; onReady: (ap
     const faceCamera = () => {
       scene.traverse((o) => { if (o.userData?.faceCam) o.quaternion.copy(camera.quaternion); });
     };
-    const shot = (x: number, y: number, z: number, clearBg = false): string | null => {
+    /** Wall / ceiling slabs are only there to make Live 3D readable — hide them in quote renders. */
+    const setWalls = (v: boolean) => scene.traverse((o) => { if (o.userData?.wall) o.visible = v; });
+    /** Trim transparent margins so the sign fills the whole frame on the quote sheet. */
+    const cropToContent = (src: HTMLCanvasElement): string => {
+      const w = src.width, h = src.height;
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return src.toDataURL("image/png");
+      ctx.drawImage(src, 0, 0);
+      const d = ctx.getImageData(0, 0, w, h).data;
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (d[(y * w + x) * 4 + 3] > 24) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      if (x1 < 0) return src.toDataURL("image/png");
+      const pad = Math.round(Math.max(w, h) * 0.02);
+      const sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad);
+      const cw = Math.min(w, x1 + pad) - sx, ch = Math.min(h, y1 + pad) - sy;
+      const out = document.createElement("canvas");
+      out.width = cw; out.height = ch;
+      out.getContext("2d")?.drawImage(c, sx, sy, cw, ch, 0, 0, cw, ch);
+      return out.toDataURL("image/png");
+    };
+    /** overlay = untrimmed transparent PNG for the site-photo overlay; otherwise a trimmed render for the quote sheet */
+    const shot = (x: number, y: number, z: number, overlay = false): string | null => {
+      const prev = camera.position.clone();
+      const prevClear = gl.getClearColor(new THREE.Color());
+      const prevAlpha = gl.getClearAlpha();
+      const prevBg = scene.background;
+      const prevPR = gl.getPixelRatio();
       try {
-        const prev = camera.position.clone();
-        const prevClear = gl.getClearColor(new THREE.Color());
-        const prevAlpha = gl.getClearAlpha();
         camera.position.set(x, y, z);
         camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
         faceCamera();
-        if (clearBg) {
-          gl.setClearColor(0x000000, 0);
-          // Hide ground/environment if any — scene background null
-          const prevBg = scene.background;
-          scene.background = null;
-          gl.render(scene, camera);
-          const data = gl.domElement.toDataURL("image/png");
-          scene.background = prevBg;
-          gl.setClearColor(prevClear, prevAlpha);
-          camera.position.copy(prev);
-          camera.lookAt(0, 0, 0);
-          camera.updateMatrixWorld();
-          faceCamera();
-          gl.render(scene, camera);
-          return data;
-        }
+        setWalls(false);
+        scene.background = null;
+        gl.setClearColor(0x000000, 0);
+        if (!overlay) gl.setPixelRatio(Math.max(prevPR, 3)); // extra sharp, since the crop makes the sign fill the frame
         gl.render(scene, camera);
-        // High-quality PNG for crisp quote sheet
-        const data = gl.domElement.toDataURL("image/png");
+        return overlay ? gl.domElement.toDataURL("image/png") : cropToContent(gl.domElement);
+      } catch {
+        return null;
+      } finally {
+        setWalls(true);
+        scene.background = prevBg;
+        gl.setClearColor(prevClear, prevAlpha);
+        gl.setPixelRatio(prevPR);
         camera.position.copy(prev);
         camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
         faceCamera();
         gl.render(scene, camera);
-        return data;
-      } catch {
-        return null;
       }
     };
     onReady({
@@ -751,7 +808,7 @@ function BoltPanelMesh({ widthFt, heightFt, shape = "rect", bolts, logoUrl, show
   return (
     <group>
       {/* wall — light backdrop so clear acrylic / logo stay visible in Live 3D & quote exports */}
-      <mesh position={[0, 0, -pt / 2 - so - 0.12]}>
+      <mesh position={[0, 0, -pt / 2 - so - 0.12]} userData={{ wall: true }}>
         <boxGeometry args={[wallW, wallH, 0.24]} />
         <meshStandardMaterial color={WALL_SOFT} roughness={0.95} />
       </mesh>
@@ -882,7 +939,18 @@ const SignScene = forwardRef<SignSceneHandle, SignSceneProps>(function SignScene
             withLight ? "bg-amber-50 border-amber-400 text-black" : "bg-white border-gray-300 text-black"
           }`}
         >
-          {withLight ? "💡 With Light" : "Without Light"}
+          {withLight ? (
+            <>
+              💡 With Light
+              {props.lightLabel && (
+                <>
+                  {" · "}
+                  <span className="inline-block w-2.5 h-2.5 rounded-full border border-gray-400 align-[-1px] mr-1" style={{ backgroundColor: props.lightColor }} />
+                  {props.lightLabel}
+                </>
+              )}
+            </>
+          ) : "Without Light"}
         </span>
       </div>
 
