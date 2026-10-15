@@ -2129,7 +2129,6 @@ export default function QuoteBuilder() {
                         {idx + 1}. {l.signName}
                         <span className="font-normal text-gray-500 ml-1.5 text-xs">{shapeLabel(l.shape)} · {size}</span>
                       </p>
-                      <p className="text-sm font-bold text-[#011424]">₱{fmt(l.unitCost * l.qty)}</p>
                     </div>
 
                     {/* Renders — background removed, trimmed to the sign, shown as large as possible */}
