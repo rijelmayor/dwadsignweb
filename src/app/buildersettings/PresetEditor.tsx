@@ -17,7 +17,7 @@ export default function PresetEditor({ quote, setQuote }: { quote: QuoteSettings
     <section className="rounded-2xl border border-line bg-panel/50 p-5 space-y-5">
       <div>
         <h3 className="font-display text-lg font-bold">Build presets · cost per sqft</h3>
-        <p className="text-xs text-fog mt-1">Cost before markup. Starter values are placeholders. For acrylic and LED neon enter the fabrication rate only (print, labor, LED); the acrylic sheet is added from the sheet prices below. Double-face 0 = single × 2.</p>
+        <p className="text-xs text-fog mt-1">Cost before markup. Optional legacy build presets are retained for compatibility. The main simple per-sqft tables above control Quote Builder pricing. Leave these legacy rates, markup, minimums, rush and mobilization at ₱0 unless intentionally used.</p>
       </div>
       {FAMILIES.map(([fid, fname]) => (
         <div key={fid} className="space-y-2 border-t border-line pt-3">

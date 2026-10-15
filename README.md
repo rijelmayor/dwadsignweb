@@ -77,3 +77,9 @@ Landing-page branding, hero/team image, service backgrounds, project image URLs,
 ## Landing project image storage
 
 For Projects / Work image uploads, run `supabase/migrations/20261002_landing_project_storage.sql` once in the Supabase SQL Editor. The Builder Settings uploader then stores project images in the `landing-assets` Storage bucket.
+
+
+### Additional Quote Builder items
+- Roll-up Banner: fixed price for Small (2 × 5 ft), Medium (2.5 × 6 ft), or Large (3 × 6 ft); each size has an editable price.
+- Signage Repair: measured area (width × height in ft) × editable ₱/sqft repair rate.
+- Both pricing settings default to ₱0 and are configured under Builder Settings → Quote → Additional products & services. Save Quote & Pricing to Supabase after editing.

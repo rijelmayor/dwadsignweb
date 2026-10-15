@@ -180,6 +180,12 @@ export interface PricingSettings {
   minimumCharge: number;
   lightboxMinimumCharge: number;
   acrylicMinimumCharge?: number;
+  /** Extra percentage of the single-face amount for double-face work. */
+  doubleFacePct?: number;
+  /** Fixed-price roll-up banner options; all start at zero. */
+  rollupBanner: { small: number; medium: number; large: number };
+  /** Signage repair rate, priced by measured square footage. */
+  signageRepairPerSqft: number;
 }
 export interface QuoteSettings {
   markupPct: number;
@@ -218,6 +224,9 @@ export const DEFAULT_PRICING: PricingSettings = {
   minimumCharge: 0,
   lightboxMinimumCharge: 0,
   acrylicMinimumCharge: 0,
+  doubleFacePct: 25,
+  rollupBanner: { small: 0, medium: 0, large: 0 },
+  signageRepairPerSqft: 0,
 };
 export const DEFAULT_QUOTE_SETTINGS: QuoteSettings = {
   // Material rates are sell ₱/sqft as-is; set markup > 0 only if you want an extra % on top
@@ -248,6 +257,9 @@ function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
       minimumCharge: num(np.minimumCharge, d.minimumCharge),
       lightboxMinimumCharge: num(np.lightboxMinimumCharge, d.lightboxMinimumCharge),
       acrylicMinimumCharge: num(np.acrylicMinimumCharge, d.acrylicMinimumCharge ?? 0),
+      doubleFacePct: num(np.doubleFacePct, d.doubleFacePct ?? 25),
+      rollupBanner: { small: num(obj(np.rollupBanner).small, 0), medium: num(obj(np.rollupBanner).medium, 0), large: num(obj(np.rollupBanner).large, 0) },
+      signageRepairPerSqft: num(np.signageRepairPerSqft, 0),
     };
   }
   const op = obj(rawQuote.panaflexPricing), olb = obj(rawQuote.lightboxRoundPricing), face = obj(op.face), lighting = obj(op.lighting), printing = obj(op.printing);
@@ -261,6 +273,9 @@ function mergePricing(rawQuote: Record<string, unknown>): PricingSettings {
     minimumCharge: num(op.minimumCharge, 0),
     lightboxMinimumCharge: num(olb.minimumCharge, 0),
     acrylicMinimumCharge: 0,
+    doubleFacePct: 25,
+    rollupBanner: { small: 0, medium: 0, large: 0 },
+    signageRepairPerSqft: 0,
   };
 }
 export function mergeQuoteSettings(raw: unknown): QuoteSettings {

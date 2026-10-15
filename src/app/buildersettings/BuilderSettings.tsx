@@ -574,7 +574,7 @@ export default function BuilderSettings() {
               <div>
                 <p className="text-[10px] uppercase tracking-[0.2em] text-teal font-bold">Pricing engine</p>
                 <h2 className="font-display text-xl font-bold">Square-foot pricing · without / with light</h2>
-                <p className="text-sm text-fog mt-1">Stored in Supabase under <strong>site_settings → quote → pricing</strong>. Every material has one rate per sqft for <strong>Without Light</strong> and one for <strong>With Light</strong>. The Quote Builder multiplies area × the matching rate (+ construction + printing), then applies the global markup.</p>
+                <p className="text-sm text-fog mt-1">Stored in Supabase under <strong>site_settings → quote → pricing</strong>. Every material has one rate per sqft for <strong>Without Light</strong> and one for <strong>With Light</strong>. The Quote Builder multiplies area × the matching per-sqft rate, then applies optional double-face / neon colour percentage adjustments. Extra charges default to ₱0. Keep the simple per-sqft tables as the source of truth.</p>
               </div>
 
               <div>
@@ -582,6 +582,8 @@ export default function BuilderSettings() {
                 <input type="number" min={0} step={0.01} className={input} value={quote.pricing.constructionPerSqft} onChange={(e) => setPricing({ constructionPerSqft: +e.target.value || 0 })} />
                 <p className="text-[11px] text-fog mt-1">Not shown to the customer. Added to every material except Sticker, Neon LED and Lightbox (their rate already covers the build).</p>
               </div>
+
+              <div className="max-w-sm"><label className={label}>Double-face surcharge · % of single-face price</label><input type="number" min={0} step={0.1} className={input} value={quote.pricing.doubleFacePct ?? 25} onChange={(e) => setPricing({ doubleFacePct: +e.target.value || 0 })} /><p className="text-[11px] text-fog mt-1">Example: 25 means double-face price = single-face price + 25%, not ×2.</p></div>
 
               <div>
                 <h3 className="font-semibold mb-3">Material rates · ₱ / sqft</h3>
@@ -597,7 +599,7 @@ export default function BuilderSettings() {
                     </div>
                   ))}
                 </div>
-                <p className="text-[11px] text-fog mt-2">Lightbox circles are capped at 3 ft diameter in the builder. Double-face signs double the material and printing rates. Acrylic is in its own table below.</p>
+                <p className="text-[11px] text-fog mt-2">Lightbox circles are capped at 3 ft diameter in the builder. Double-face adds the editable percentage above. Acrylic is in its own table below.</p>
               </div>
 
               <div>
@@ -621,6 +623,16 @@ export default function BuilderSettings() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-teal/30 p-4 space-y-4">
+                <div><h3 className="font-semibold">Additional products & services</h3><p className="text-[11px] text-fog mt-1">These are separate selectable items in Quote Builder. All new prices default to ₱0.</p></div>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div><label className={label}>Roll-up banner · Small (2 × 5 ft) · fixed ₱</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.rollupBanner?.small ?? 0} onChange={(e) => setPricing({ rollupBanner: { ...(quote.pricing.rollupBanner ?? { small: 0, medium: 0, large: 0 }), small: +e.target.value || 0 } })} /></div>
+                  <div><label className={label}>Roll-up banner · Medium (2.5 × 6 ft) · fixed ₱</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.rollupBanner?.medium ?? 0} onChange={(e) => setPricing({ rollupBanner: { ...(quote.pricing.rollupBanner ?? { small: 0, medium: 0, large: 0 }), medium: +e.target.value || 0 } })} /></div>
+                  <div><label className={label}>Roll-up banner · Large (3 × 6 ft) · fixed ₱</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.rollupBanner?.large ?? 0} onChange={(e) => setPricing({ rollupBanner: { ...(quote.pricing.rollupBanner ?? { small: 0, medium: 0, large: 0 }), large: +e.target.value || 0 } })} /></div>
+                </div>
+                <div className="max-w-sm"><label className={label}>Signage repair · ₱ / sqft</label><input type="number" min={0} step={0.01} className={input} value={quote.pricing.signageRepairPerSqft ?? 0} onChange={(e) => setPricing({ signageRepairPerSqft: +e.target.value || 0 })} /><p className="text-[11px] text-fog mt-1">Repair price = measured width × height × repair rate × quantity. Starts at ₱0.</p></div>
+              </div>
+
               <div>
                 <h3 className="font-semibold mb-3">Printing · ₱ / sqft</h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -638,7 +650,7 @@ export default function BuilderSettings() {
 
             <PresetEditor quote={quote} setQuote={setQuote} />
 
-            <button disabled={saving} onClick={() => save("quote", quote)} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
+            <button disabled={saving} onClick={() => save("quote", mergeQuoteSettings(quote))} className="rounded-full bg-gold px-8 py-3 font-semibold text-ink hover:bg-gold-dim transition disabled:opacity-50">
               {saving ? "Saving…" : "Save Quote & Pricing to Supabase"}
             </button>
           </div>

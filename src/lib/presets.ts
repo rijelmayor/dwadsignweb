@@ -56,13 +56,13 @@ export interface PresetSettings {
 }
 const MIN: Record<Family, number> = { flex: 2500, apc: 2000, acrylic: 1500, metal: 2000, neon: 3500, sticker: 500, roundbox: 3500 };
 export const DEFAULT_PRESET_SETTINGS: PresetSettings = {
-  rates: Object.fromEntries(PRESETS.map((p) => [p.id, { rate: p.rate, rateDouble: p.rateDouble }])),
-  markup: Object.fromEntries(FAMILIES.map(([f]) => [f, 40])),
-  minimum: MIN,
-  sheets: { thinPiece: 1000, thinFull: 2800, thickFull: 4500 },
-  neonColorAddonPct: 25,
-  rushPct: 30,
-  mobilSmall: 500, mobilLarge: 1000, mobilThresholdSqft: 30,
+  rates: Object.fromEntries(PRESETS.map((p) => [p.id, { rate: 0, rateDouble: 0 }])),
+  markup: Object.fromEntries(FAMILIES.map(([f]) => [f, 0])),
+  minimum: Object.fromEntries(FAMILIES.map(([f]) => [f, 0])),
+  sheets: { thinPiece: 0, thinFull: 0, thickFull: 0 },
+  neonColorAddonPct: 0,
+  rushPct: 0,
+  mobilSmall: 0, mobilLarge: 0, mobilThresholdSqft: 30,
 };
 const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const o = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});

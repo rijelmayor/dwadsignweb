@@ -22,7 +22,7 @@ import type { SignSceneHandle } from "@/components/SignScene";
 const SignScene = dynamic(() => import("@/components/SignScene"), { ssr: false });
 
 type Shape = "rect" | "circle";
-type ServiceId = "panaflex" | "lightbox" | "acrylic" | "neon" | "apc" | "tarp" | "sticker" | "metal" | "custom";
+type ServiceId = "panaflex" | "lightbox" | "acrylic" | "neon" | "apc" | "tarp" | "sticker" | "metal" | "custom" | "rollup" | "repair";
 type LbBuild = "builtup" | "acrylic";
 type Mount = "wall" | "bracket" | "hanging" | "pole" | "pole_single" | "rooftop";
 type Sides = "single" | "double";
@@ -144,6 +144,8 @@ const SERVICES: ServiceDef[] = [
   { id: "sticker", name: "Sticker", sub: "Flat adhesive sticker", thicknessIn: 0.25, defaultLight: "without", printing: true },
   { id: "metal", name: "Metal Sheet", sub: "Metal sheet face", thicknessIn: 2, defaultLight: "without", printing: true },
   { id: "custom", name: "Custom", sub: "Describe your own material", thicknessIn: 2, defaultLight: "without", printing: true },
+  { id: "rollup", name: "Roll-up Banner", sub: "Fixed price · choose a size", thicknessIn: 0.1, defaultLight: "without", printing: false },
+  { id: "repair", name: "Signage Repair", sub: "Measured area · ₱/sqft", thicknessIn: 1, defaultLight: "without", printing: false },
 ];
 const LB_BUILDS: [LbBuild, string, string][] = [
   ["builtup", "Built-up", "Metal returns, lit face"],
@@ -247,6 +249,7 @@ export default function QuoteBuilder() {
   const [width, setWidth] = useState(4);
   const [height, setHeight] = useState(2);
   const [diameter, setDiameter] = useState(2);
+  const [rollupSize, setRollupSize] = useState<"small" | "medium" | "large">("small");
   const [thicknessIn, setThicknessIn] = useState(2);
   const [qty, setQty] = useState(1);
   const [lighting, setLighting] = useState("without");
@@ -349,9 +352,12 @@ export default function QuoteBuilder() {
   const dimW = isCircle ? diameter : width;
   const dimH = isCircle ? diameter : height;
   const areaSqft = Math.max(0, isCircle ? Math.PI * (diameter / 2) ** 2 : width * height);
+  const isRollup = serviceId === "rollup";
+  const isRepair = serviceId === "repair";
+  const rollupLabels = { small: "Small · 2 × 5 ft", medium: "Medium · 2.5 × 6 ft", large: "Large · 3 × 6 ft" };
   const activeLogo = logoPreview || logoUrl || undefined;
   const lbBuildLabel = LB_BUILDS.find(([id]) => id === lbBuild)?.[1] ?? "";
-  const sidesMult = sides === "double" ? 2 : 1;
+  const sidesMult = sides === "double" ? 1 + Math.max(0, qs.pricing.doubleFacePct ?? 25) / 100 : 1;
   const sidesLabel = sides === "double" ? "Double face" : "Single face";
   const serviceName = serviceId === "custom" && customName.trim() ? `Custom · ${customName.trim()}` : def.name;
   const faceLabel = isLightbox ? `Lightbox · ${lbBuildLabel}` : serviceName;
@@ -425,6 +431,17 @@ export default function QuoteBuilder() {
     const key = lit ? "with" : "without";
     const printRate = def.printing ? (pr.printing[printing] ?? 0) * sidesMult : 0;
 
+    if (isRollup) {
+      const price = Math.max(0, pr.rollupBanner?.[rollupSize] ?? 0);
+      return { rates: { construction: 0, face: price, lighting: 0, printing: 0 }, raw: price, unitCost: price, hasTbd: price <= 0, breakdown: { construction: 0, face: price, lighting: 0, printing: 0, markup: 0 } as LineItem["breakdown"] };
+    }
+    if (isRepair) {
+      const rate = Math.max(0, pr.signageRepairPerSqft ?? 0) * sidesMult;
+      const raw = rate * areaSqft;
+      const unitCost = raw * markup;
+      return { rates: { construction: 0, face: rate, lighting: 0, printing: 0 }, raw, unitCost, hasTbd: rate <= 0, breakdown: { construction: 0, face: raw, lighting: 0, printing: 0, markup: unitCost - raw } as LineItem["breakdown"] };
+    }
+
     if (isLightbox) {
       const rate = (pr.lightbox[lbBuild]?.[key] ?? 0) * sidesMult;
       const rates = { construction: rate, face: 0, lighting: 0, printing: printRate };
@@ -477,7 +494,8 @@ export default function QuoteBuilder() {
 
     // Other materials
     const framed = serviceId !== "sticker" && serviceId !== "neon";
-    const faceRate = (pr.materials[serviceId]?.[key] ?? 0) * sidesMult;
+    const neonColorMultiplier = serviceId === "neon" && neonColors > 2 ? 1 + Math.max(0, qs.presetSettings.neonColorAddonPct) / 100 : 1;
+    const faceRate = (pr.materials[serviceId]?.[key] ?? 0) * sidesMult * neonColorMultiplier;
     const rates = {
       construction: framed ? pr.constructionPerSqft : 0,
       face: faceRate,
@@ -500,7 +518,7 @@ export default function QuoteBuilder() {
         markup: unitCost - raw,
       } as LineItem["breakdown"],
     };
-  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing, activePreset]);
+  }, [qs, isLightbox, lbBuild, serviceId, lit, printing, areaSqft, sidesMult, def.printing, activePreset, isRollup, isRepair, rollupSize]);
 
   const pickShape = (next: Shape) => {
     setShape(next);
@@ -661,7 +679,7 @@ export default function QuoteBuilder() {
   };
 
   const addLine = () => {
-    if (areaSqft <= 0) return;
+    if (areaSqft <= 0 && !isRollup) return;
     const renders = {
       front: sceneRef.current?.captureFront() ?? null,
       side: sceneRef.current?.captureSide() ?? null,
@@ -669,7 +687,7 @@ export default function QuoteBuilder() {
     };
     const r = live.rates;
     setLines((prev) => [...prev, {
-      id: crypto.randomUUID(), serviceId, signName: `${serviceName} Sign`, shape,
+      id: crypto.randomUUID(), serviceId, signName: serviceId === "rollup" ? `Roll-up Banner · ${rollupLabels[rollupSize]}` : serviceId === "repair" ? "Signage Repair" : `${serviceName} Sign`, shape,
       width: dimW, height: dimH, diameter, thicknessIn, unit: dimUnit, depthUnit, areaSqft, qty,
       face: `${activePreset ? activePreset.name : faceLabel} · ${sidesLabel} · ${isBoltPanel ? `${PANEL_TINTS.find((t) => t.id === panelTint)?.label.toLowerCase()} panel ${panelMm}mm` : `face ${colorName(bodyColor)} / ${isLetters ? "siding" : "depth"} ${colorName(returnColor)}`}`, lighting: lightingLabel, lightHex: askLightColor ? lightHex : undefined, printing: printingLabel, mounting: mountingShown, note, unitCost: live.unitCost,
       breakdown: (live as { breakdown?: LineItem["breakdown"] }).breakdown ?? {
@@ -752,7 +770,7 @@ export default function QuoteBuilder() {
    * run through the SAME rules as the final sheet (rush %, shipping, mobilization, discount).
    * This is the one number the builder shows, so it always matches the final quotation.
    */
-  const buildSig = [shape, serviceId, sides, width, height, diameter, thicknessIn, qty, lighting, lightColorId, customLightHex, printing, presetId, lbBuild, customName, mounting, armCount, bodyColor, returnColor, letterText, letterFont, letterHeightIn, letterDepthIn, letterGlow, neonBacking, neonColors, psu, leftoverLost, logoScaleW, logoScaleH, activeLogo?.length ?? 0, panelTint, boltCount, boltFinish, standoffMm].join("|");
+  const buildSig = [shape, serviceId, rollupSize, sides, width, height, diameter, thicknessIn, qty, lighting, lightColorId, customLightHex, printing, presetId, lbBuild, customName, mounting, armCount, bodyColor, returnColor, letterText, letterFont, letterHeightIn, letterDepthIn, letterGlow, neonBacking, neonColors, psu, leftoverLost, logoScaleW, logoScaleH, activeLogo?.length ?? 0, panelTint, boltCount, boltFinish, standoffMm].join("|");
   useEffect(() => {
     if (markAdded.current) { markAdded.current = false; setAddedSig(buildSig); }
   });
@@ -1393,6 +1411,8 @@ export default function QuoteBuilder() {
                 </p>
               </div>
 
+              {isRollup && <div className="grid sm:grid-cols-3 gap-2">{(["small", "medium", "large"] as const).map((size) => <button key={size} type="button" onClick={() => setRollupSize(size)} className={`rounded-xl border p-3 text-left ${rollupSize === size ? "border-gold bg-gold text-ink" : "border-line text-fog"}`}><span className="block font-bold">{rollupLabels[size]}</span><span className="text-xs">Fixed price: ₱{Number(qs.pricing.rollupBanner?.[size] ?? 0).toLocaleString("en-PH")}</span></button>)}</div>}
+              {!isRollup && <>
               {/* Quick size presets — sales love these */}
               <div>
                 <label className={labelCls}>Common sizes (tap to apply)</label>
@@ -1442,6 +1462,7 @@ export default function QuoteBuilder() {
                 {" = "}<strong className="text-white">{areaSqft.toFixed(2)} sqft</strong>
                 {dimUnit !== "ft" && <> · typed as {isCircle ? `Ø ${fmtLen(diameter, dimUnit)}` : `${fmtLen(width, dimUnit)} × ${fmtLen(height, dimUnit)}`}</>}
               </p>
+              </>}
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-lg bg-ink/50 border border-line px-2 py-2">
                   <span className="text-fog block">Area</span>
